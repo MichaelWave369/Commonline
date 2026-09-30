@@ -1,13 +1,33 @@
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-d.1" as const;
+export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
+
 export type PrincipalKind = "human" | "agent" | "service" | "device";
 export type PresenceState = "online" | "offline";
-export type WorkStatus = "offered" | "working" | "completed" | "failed" | "canceled";
+export type ParticipantRole =
+  | "steward"
+  | "participant"
+  | "observer"
+  | "silent-worker";
+export type RequestedHumanRole = "participant" | "observer";
+
+export type WorkStatus =
+  | "offered"
+  | "working"
+  | "proposed"
+  | "accepted"
+  | "failed"
+  | "canceled";
+
 export type ArtifactStatus = "proposed" | "accepted";
 
 export interface Participant {
   id: string;
   name: string;
   kind: PrincipalKind;
-  role: string;
+  role: ParticipantRole;
+  /**
+   * Presence is a projection of active sessions. It is not identity.
+   */
   presence: PresenceState;
 }
 
@@ -30,6 +50,7 @@ export interface Artifact {
 }
 
 export type Capability =
+  | "READ_ROOM_STATE"
   | "READ_SELECTED_CONTEXT"
   | "WRITE_DRAFT_ARTIFACT"
   | "SUBMIT_WORK"
@@ -38,22 +59,40 @@ export type Capability =
   | "SPEAK"
   | "EXECUTE_EXTERNAL_EFFECT";
 
-export interface Grant {
-  principalId: string;
+export interface GrantReceipt {
+  grantId: string;
+  roomId: string;
+  subjectParticipantId: string;
   capability: Capability;
-  allowed: boolean;
+  issuerId: string;
+  issuedAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+}
+
+export interface AcceptanceReceipt {
+  receiptId: string;
+  acceptId: string;
+  roomId: string;
+  workItemId: string;
+  artifactId: string;
+  actorParticipantId: string;
+  authorityGrantId: string;
+  committedVersion: number;
+  acceptedAt: string;
 }
 
 export interface RoomSnapshot {
+  schemaVersion: CommonlineWireSchemaVersion;
   roomId: string;
   purpose: string;
   version: number;
   episodeActive: boolean;
   participants: Participant[];
-  grants: Grant[];
+  grants: GrantReceipt[];
   workItems: WorkItem[];
   artifacts: Artifact[];
-  acceptedArtifactIds: string[];
+  acceptances: AcceptanceReceipt[];
 }
 
 export type RoomEventType =
@@ -73,12 +112,23 @@ export interface RoomEvent {
   occurredAt: string;
 }
 
+export type AgentWorkState =
+  | "idle"
+  | "working"
+  | "waiting"
+  | "blocked"
+  | "completed"
+  | "failed";
+
 export interface JoinRoomMessage {
   type: "join_room";
   requestId: string;
+  schemaVersion: CommonlineWireSchemaVersion;
   roomId: string;
-  clientId: string;
+  participantId: string;
+  sessionId: string;
   name: string;
+  requestedRole: RequestedHumanRole;
   acknowledgedVersion: number;
 }
 
@@ -90,12 +140,15 @@ export interface SubmitWorkMessage {
   prompt: string;
 }
 
-export interface AcceptArtifactMessage {
-  type: "accept_artifact";
+export interface AcceptOutcomeMessage {
+  type: "accept_outcome";
   requestId: string;
   roomId: string;
   baseVersion: number;
+  acceptId: string;
+  workItemId: string;
   artifactId: string;
+  authorityGrantId: string;
 }
 
 export type RtcSignalPayload =
@@ -119,14 +172,14 @@ export interface RtcSignalClientMessage {
   type: "rtc_signal";
   requestId: string;
   roomId: string;
-  targetClientId: string;
+  targetParticipantId: string;
   signal: RtcSignalPayload;
 }
 
 export type ClientMessage =
   | JoinRoomMessage
   | SubmitWorkMessage
-  | AcceptArtifactMessage
+  | AcceptOutcomeMessage
   | RtcSignalClientMessage;
 
 export interface RoomSnapshotMessage {
@@ -142,11 +195,27 @@ export interface RoomEventMessage {
   event: RoomEvent;
 }
 
+export interface AcceptanceReceiptMessage {
+  type: "acceptance_receipt";
+  requestId: string;
+  room: RoomSnapshot;
+  receipt: AcceptanceReceipt;
+  replayed: boolean;
+}
+
+export interface AgentWorkStatusMessage {
+  type: "agent_work_status";
+  roomId: string;
+  participantId: string;
+  workItemId: string;
+  state: AgentWorkState;
+}
+
 export interface RtcSignalRelayMessage {
   type: "rtc_signal";
   requestId: string;
   roomId: string;
-  fromClientId: string;
+  fromParticipantId: string;
   signal: RtcSignalPayload;
 }
 
@@ -157,7 +226,11 @@ export type RejectionCode =
   | "INVALID_INTENT"
   | "INVALID_SESSION"
   | "ARTIFACT_NOT_FOUND"
-  | "PEER_UNAVAILABLE";
+  | "WORK_ITEM_NOT_FOUND"
+  | "GRANT_NOT_FOUND"
+  | "OUTCOME_ALREADY_ACCEPTED"
+  | "PEER_UNAVAILABLE"
+  | "SCHEMA_VERSION_MISMATCH";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -166,10 +239,13 @@ export interface IntentRejectedMessage {
   message: string;
   expectedVersion?: number;
   room?: RoomSnapshot;
+  canonicalAcceptance?: AcceptanceReceipt;
 }
 
 export type ServerMessage =
   | RoomSnapshotMessage
   | RoomEventMessage
+  | AcceptanceReceiptMessage
+  | AgentWorkStatusMessage
   | RtcSignalRelayMessage
   | IntentRejectedMessage;
