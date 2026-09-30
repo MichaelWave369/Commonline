@@ -187,8 +187,62 @@ For cross-device testing, serve the web client from a secure context where requi
 
 The room still separates presence from media permission, `SPEAK` from `RECEIVE_MEDIA`, agent task permission from media access, proposed artifacts from accepted artifacts, accepted outcomes from external execution authority, and durable events from ephemeral media signaling.
 
-## Next rung: P0-d
+## P0-d — identity, authority and scratch wire freeze
 
-P0-d should harden the first real call rather than immediately multiplying features. Candidate focus: durable server persistence, authenticated participant identity, TURN configuration/connectivity diagnostics, stronger call cleanup, and explicit media-recipient consent state.
+P0-d freezes the coordination wire **before** persistence.
 
-Only after that foundation is credible should Commonline expand toward group media, agent audio participation, soundboards, or PSTN gateways.
+The governing chain is now:
+
+```text
+Work item
+   ↓
+Scratch        ephemeral / private / non-event
+   ↓
+Proposal       room-visible / not canonical
+   ↓
+Acceptance     single-writer / idempotent / receipt-backed
+   ↓
+External effect (future, separately authorized)
+```
+
+### Frozen P0-d invariants
+
+- participant identity is distinct from browser/session transport
+- same-participant reconnects coalesce onto one current session
+- reconnect uses exponential backoff with jitter
+- the silent worker is a real `Participant`, not UI-only decoration
+- observers are human participants with read-only grants
+- authority is represented by immutable grant receipts
+- `ACCEPT_OUTCOME` binds to work item + artifact + grant receipt
+- accept IDs are client-stable and idempotent
+- one work item has at most one canonical accepted outcome in P0
+- competing acceptance returns the canonical acceptance receipt
+- scratch is application-level temporary workspace, not model chain-of-thought
+- scratch never enters room snapshots, room events, resume deltas, or acceptance receipts
+- humans see work status without seeing scratch content
+- WebRTC signaling remains ephemeral
+- wire schema advertises `p0-d.1`
+
+### Persistence boundary
+
+P0-d still uses server memory. That is intentional.
+
+SQLite/file persistence comes **after** these shapes survive the proof suite. Persisting P0-c first would fossilize browser-session identity and role accidents into storage.
+
+### Known hole: accepted does not mean eternal truth
+
+P0-d has no supersede/retract transition yet.
+
+An accepted outcome is the room's current canonical outcome for that work item, not an assertion of permanent truth. Supersession is deliberately deferred one rung and must preserve prior receipts.
+
+## Next rung: P0-e
+
+Add local SQLite/file persistence for durable room state, events, grants, work items, proposals, and acceptance receipts **without** persisting:
+
+- scratch
+- agent work status pulses
+- WebRTC signaling
+- audio frames
+- browser connection/session objects
+
+P0-e should also include schema migration/version checks so `p0-d.1` is not silently reinterpreted later.
