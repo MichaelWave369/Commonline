@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **design-study / pre-prototype** stage.
+This repository is at the **P0 prototype** stage. The current rung adds a server-authoritative synchronized room while preserving the design-study boundaries.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -65,15 +65,21 @@ The current architecture and roadmap files are working project documents. They d
 
 ```text
 Commonline/
-├── README.md
+├── apps/
+│   ├── server/          # authoritative room + WebSocket synchronization
+│   └── web/             # browser participant UI
+├── packages/
+│   ├── agent-runtime/   # bounded worker adapter seam
+│   ├── protocol/        # wire and room types
+│   ├── room-core/       # pure room state transitions
+│   └── ui/              # shared UI primitives
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── MVP.md
 │   ├── PROTOCOL.md
 │   ├── ROADMAP.md
 │   └── design/
-│       ├── Commonline_Design_Study_v0.1.md
-│       └── Commonline_Design_Study_v0.1_Checker_Execution_Log.md
-└── .gitignore
+└── README.md
 ```
 
 ## Design principles
@@ -92,7 +98,7 @@ Commonline/
 
 ## Development
 
-The first executable rung now lives on the P0 browser-room branch.
+The current executable rung is P0-b: a synchronized browser room backed by a server-authoritative in-memory room service.
 
 ```bash
 npm install
@@ -102,12 +108,14 @@ npm run dev
 Open the local Vite URL and exercise the current vertical slice:
 
 ```text
-Create/Resume Room
-→ Send Silent-Agent Task
-→ Receive Proposed Artifact
-→ Accept Artifact
-→ Leave Episode
-→ Resume Durable State
+Join Room from two browser sessions
+→ Submit Version-Bound Intent
+→ Server Validates Authority + Version
+→ Broadcast Accepted Room Event
+→ Silent Worker Proposes Artifact
+→ Steward Accepts Outcome
+→ Leave / Rejoin
+→ Receive Missed-Event Delta
 ```
 
 See [docs/MVP.md](docs/MVP.md) for the exact scope and the intentionally missing pieces.
