@@ -111,18 +111,84 @@ Because session identity is tab-scoped, separate tabs can represent separate P0 
 - SIP/PSTN gateway
 - federation
 
-## Next rung: P0-c
+## P0-c — one-to-one human WebRTC audio
 
-Add the first human-to-human WebRTC media path while keeping media timing separate from authoritative room state.
-
-The target vertical slice becomes:
+P0-c puts actual live voice into the Commonline episode while keeping media separate from durable coordination.
 
 ```text
-Browser A ──voice──┐
-                   ├── Commonline episode
-Browser B ──voice──┘
-          │
-          └── synchronized governed room state
+Browser A microphone
+        │
+        ├──── WebRTC media ────┐
+        │                      │
+        │                 Browser B speaker
+        │
+        └── ephemeral signaling ── Room Service
+                                   │
+                                   └── durable room state remains separate
 ```
 
-Signaling may travel through the room service, but audio frames must not enter the durable room event log.
+### Implemented in this rung
+
+- one-to-one human WebRTC audio
+- explicit Call / Answer / Decline / Hang up flow
+- microphone acquisition only after a human places or answers a call
+- mute / unmute
+- WebRTC offer, answer, ICE-candidate, and hangup signaling through the existing WebSocket connection
+- signaling relayed only between online participants in the same room
+- `SPEAK` and `RECEIVE_MEDIA` grants checked before relay
+- silent worker explicitly denied `RECEIVE_MEDIA` and `SPEAK`
+- signaling messages excluded from room versions, event history, and resume deltas
+- optional STUN configuration
+- tests confirming media signaling authorization does not mutate durable room state
+
+### Deliberate privacy boundary
+
+The silent worker does **not** receive microphone audio in P0-c.
+
+The browser may send selected text work to the agent, but live media is human-to-human only.
+
+This rung does not record audio, transcribe speech, persist SDP/ICE signaling, persist audio frames, summarize speech, or feed live media to an agent.
+
+A future machine-listening feature requires its own visible consent and media-recipient model rather than silently inheriting permission from room membership.
+
+### Media versus coordination
+
+Durable actions remain version-bound (`submit_work`, `accept_artifact`). WebRTC signaling (`offer`, `answer`, `ice`, `hangup`) is deliberately ephemeral. Those messages are validated against live membership and media grants, then forwarded directly to the intended peer. They do not create Commonline room events.
+
+### Network boundary
+
+By default P0-c uses no external ICE server. Same-host and some local-network tests can succeed with direct candidates. An optional `VITE_COMMONLINE_STUN_URL` may be configured for ICE discovery. STUN is not a relay; restrictive NAT/firewall combinations will require TURN in a later rung.
+
+### Known P0-c limitations
+
+- one-to-one audio only
+- no call queue
+- simultaneous cross-calling is not resolved with a perfect-negotiation algorithm
+- no TURN relay
+- no authenticated human identity
+- no durable server persistence
+- no call history
+- no recording or transcription
+- no agent audio
+- no SIP/PSTN
+
+## Local development
+
+```bash
+npm install
+npm run dev
+```
+
+This starts the room service on `http://localhost:8787` and the Vite browser app. Open two browser sessions with distinct session storage, join the same room, and press **Call** from one participant. The other participant must explicitly press **Answer** before its microphone opens.
+
+For cross-device testing, serve the web client from a secure context where required by browser microphone policy.
+
+## Governance retained
+
+The room still separates presence from media permission, `SPEAK` from `RECEIVE_MEDIA`, agent task permission from media access, proposed artifacts from accepted artifacts, accepted outcomes from external execution authority, and durable events from ephemeral media signaling.
+
+## Next rung: P0-d
+
+P0-d should harden the first real call rather than immediately multiplying features. Candidate focus: durable server persistence, authenticated participant identity, TURN configuration/connectivity diagnostics, stronger call cleanup, and explicit media-recipient consent state.
+
+Only after that foundation is credible should Commonline expand toward group media, agent audio participation, soundboards, or PSTN gateways.
