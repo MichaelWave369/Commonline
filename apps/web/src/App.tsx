@@ -1,172 +1,205 @@
-import { useMemo, useState } from "react";
-import { MockSilentAgent } from "@commonline/agent-runtime";
-import {
-  acceptArtifact,
-  createRoom,
-  leaveEpisode,
-  resumeRoom,
-  submitWork,
-  type RoomState
-} from "@commonline/room-core";
+import { useState } from "react";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
-
-const STORAGE_KEY = "commonline:p0-room";
-
-function loadRoom(): RoomState {
-  const existing = localStorage.getItem(STORAGE_KEY);
-  if (existing) {
-    try {
-      return JSON.parse(existing) as RoomState;
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }
-  return createRoom({
-    roomId: "commonline-p0",
-    purpose: "Prove concurrent work + trustworthy resumption",
-    participantNames: ["Mikey", "Guest"]
-  });
-}
-
-function saveRoom(room: RoomState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(room));
-}
+import { useCommonlineRoom } from "./useCommonlineRoom";
 
 export function App() {
-  const [room, setRoom] = useState<RoomState>(() => loadRoom());
+  const {
+    clientId,
+    name,
+    setName,
+    room,
+    connection,
+    resumeDelta,
+    lastEvent,
+    notice,
+    connect,
+    disconnect,
+    submitWork,
+    acceptArtifact
+  } = useCommonlineRoom();
+
   const [taskText, setTaskText] = useState(
     "Compare two approaches and return the trade-offs as a compact artifact."
   );
-  const [working, setWorking] = useState(false);
-  const agent = useMemo(() => new MockSilentAgent("Vessie (silent worker)"), []);
 
-  function update(next: RoomState) {
-    setRoom(next);
-    saveRoom(next);
-  }
-
-  async function runTask() {
-    if (!taskText.trim() || working) return;
-    setWorking(true);
-    const dispatched = submitWork(room, {
-      requestedBy: "Mikey",
-      prompt: taskText.trim()
-    });
-    update(dispatched);
-    const task = dispatched.workItems.at(-1)!;
-    const artifact = await agent.perform(task);
-    update({
-      ...dispatched,
-      artifacts: [...dispatched.artifacts, artifact],
-      workItems: dispatched.workItems.map((item) =>
-        item.id === task.id ? { ...item, status: "completed" } : item
-      ),
-      version: dispatched.version + 1
-    });
-    setWorking(false);
-  }
-
-  const resumeDelta = room.lastResumeDelta;
+  const me = room?.participants.find((participant) => participant.id === clientId);
+  const canAccept = room?.grants.some(
+    (grant) =>
+      grant.principalId === clientId &&
+      grant.capability === "ACCEPT_OUTCOME" &&
+      grant.allowed
+  );
 
   return (
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0</div>
-          <h1>{room.purpose}</h1>
+          <div className="eyebrow">COMMONLINE · P0-b</div>
+          <h1>{room?.purpose ?? "Server-authoritative shared room"}</h1>
         </div>
         <div className="status-row">
-          <Badge>{room.episodeActive ? "EPISODE LIVE" : "ROOM DORMANT"}</Badge>
-          <Badge>v{room.version}</Badge>
+          <Badge>{connection.toUpperCase()}</Badge>
+          {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
       </header>
 
       <section className="hero-grid">
         <Card>
-          <SectionTitle>Room</SectionTitle>
+          <SectionTitle>Join the live episode</SectionTitle>
           <p className="muted">
-            Durable state survives the live episode. Raw speech is not stored by this prototype.
+            Each browser session gets its own temporary principal ID. Authentication is deliberately
+            not claimed in this rung.
           </p>
-          <div className="participant-list">
-            {room.participants.map((p) => (
-              <div className="participant" key={p.id}>
-                <span className="presence-dot" />
-                <div>
-                  <strong>{p.name}</strong>
-                  <div className="muted small">{p.kind} · {p.role}</div>
-                </div>
-              </div>
-            ))}
-            <div className="participant agent">
-              <span className="presence-dot" />
-              <div>
-                <strong>{agent.name}</strong>
-                <div className="muted small">agent · no speaking grant</div>
-              </div>
-            </div>
+          <input
+            className="text-input"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            disabled={connection !== "disconnected"}
+            aria-label="Display name"
+          />
+          <div className="button-row">
+            {connection === "disconnected" ? (
+              <Button onClick={connect} disabled={!name.trim()}>
+                Join room
+              </Button>
+            ) : (
+              <Button onClick={disconnect} disabled={connection === "connecting"}>
+                Leave episode
+              </Button>
+            )}
           </div>
+          {notice && <p className="notice">{notice}</p>}
+          <div className="muted small">Session principal: {clientId}</div>
         </Card>
 
         <Card>
           <SectionTitle>Authority boundary</SectionTitle>
           <div className="grant-grid">
-            <Badge>READ SELECTED CONTEXT ✓</Badge>
-            <Badge>WRITE DRAFT ARTIFACT ✓</Badge>
-            <Badge>SPEAK ✕</Badge>
-            <Badge>EXECUTE EXTERNAL EFFECT ✕</Badge>
+            <Badge>AGENT READ SELECTED CONTEXT ✓</Badge>
+            <Badge>AGENT WRITE DRAFT ✓</Badge>
+            <Badge>AGENT SPEAK ✕</Badge>
+            <Badge>AGENT EXECUTE ✕</Badge>
           </div>
-          <p className="muted small">
-            This worker can return proposals only. Acceptance and execution remain separate.
+          {me && (
+            <p className="muted small">
+              You are <strong>{me.role}</strong>. ACCEPT_OUTCOME: {canAccept ? "✓" : "✕"}.
+            </p>
+          )}
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Live participants</SectionTitle>
+          {!room ? (
+            <p className="muted">Join to receive the authoritative room snapshot.</p>
+          ) : (
+            <div className="participant-list">
+              {room.participants.map((participant) => (
+                <div className="participant" key={participant.id}>
+                  <span
+                    className={
+                      participant.presence === "online"
+                        ? "presence-dot"
+                        : "presence-dot offline"
+                    }
+                  />
+                  <div>
+                    <strong>{participant.name}</strong>
+                    <div className="muted small">
+                      {participant.kind} · {participant.role} · {participant.presence}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="participant agent">
+                <span className="presence-dot" />
+                <div>
+                  <strong>Vessie (silent worker)</strong>
+                  <div className="muted small">agent · server-owned mock adapter</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Synchronization</SectionTitle>
+          <p className="muted">
+            Clients send intents against a base room version. The server validates the version,
+            authority, and transition before broadcasting new state.
           </p>
+          {lastEvent ? (
+            <div className="delta">
+              <strong>Latest accepted event</strong>
+              <p>{lastEvent.summary}</p>
+              <div className="muted small">
+                {lastEvent.type} · v{lastEvent.version}
+              </div>
+            </div>
+          ) : (
+            <p className="muted small">No synchronized event received yet.</p>
+          )}
         </Card>
       </section>
 
       <section className="work-grid">
         <Card>
-          <SectionTitle>Bounded work</SectionTitle>
+          <SectionTitle>Bounded silent work</SectionTitle>
           <textarea
             value={taskText}
-            onChange={(e) => setTaskText(e.target.value)}
+            onChange={(event) => setTaskText(event.target.value)}
             rows={6}
             aria-label="Agent task"
           />
-          <div className="button-row">
-            <Button onClick={runTask} disabled={working || !room.episodeActive}>
-              {working ? "Agent working…" : "Send silent task"}
-            </Button>
-          </div>
+          <Button
+            onClick={() => submitWork(taskText)}
+            disabled={connection !== "connected" || !taskText.trim()}
+          >
+            Send server-authorized task
+          </Button>
+
           <div className="timeline">
-            {room.workItems.slice().reverse().map((item) => (
-              <div className="timeline-item" key={item.id}>
-                <strong>{item.status.toUpperCase()}</strong>
-                <span>{item.prompt}</span>
-              </div>
-            ))}
+            {room?.workItems
+              .slice()
+              .reverse()
+              .map((item) => (
+                <div className="timeline-item" key={item.id}>
+                  <strong>{item.status.toUpperCase()}</strong>
+                  <span>{item.prompt}</span>
+                </div>
+              ))}
           </div>
         </Card>
 
         <Card>
           <SectionTitle>Artifact inbox</SectionTitle>
-          {room.artifacts.length === 0 ? (
-            <p className="muted">No agent artifacts yet.</p>
+          {!room || room.artifacts.length === 0 ? (
+            <p className="muted">No proposed artifacts yet.</p>
           ) : (
-            room.artifacts.slice().reverse().map((artifact) => (
-              <article className="artifact" key={artifact.id}>
-                <div className="artifact-head">
-                  <strong>{artifact.title}</strong>
-                  <Badge>{artifact.status}</Badge>
-                </div>
-                <p>{artifact.body}</p>
-                <div className="muted small">
-                  Produced by {artifact.producedBy} · source task {artifact.sourceWorkId}
-                </div>
-                {artifact.status === "proposed" && (
-                  <Button onClick={() => update(acceptArtifact(room, artifact.id))}>
-                    Accept into room state
-                  </Button>
-                )}
-              </article>
-            ))
+            room.artifacts
+              .slice()
+              .reverse()
+              .map((artifact) => (
+                <article className="artifact" key={artifact.id}>
+                  <div className="artifact-head">
+                    <strong>{artifact.title}</strong>
+                    <Badge>{artifact.status}</Badge>
+                  </div>
+                  <p>{artifact.body}</p>
+                  <div className="muted small">
+                    Produced by {artifact.producedBy} · source {artifact.sourceWorkId}
+                  </div>
+                  {artifact.status === "proposed" && (
+                    <Button
+                      onClick={() => acceptArtifact(artifact.id)}
+                      disabled={!canAccept || connection !== "connected"}
+                    >
+                      {canAccept ? "Accept into durable room state" : "Steward approval required"}
+                    </Button>
+                  )}
+                </article>
+              ))
           )}
         </Card>
       </section>
@@ -174,52 +207,43 @@ export function App() {
       <section className="work-grid">
         <Card>
           <SectionTitle>Durable room state</SectionTitle>
-          {room.acceptedArtifactIds.length === 0 ? (
+          {!room || room.acceptedArtifactIds.length === 0 ? (
             <p className="muted">Nothing has been accepted yet.</p>
           ) : (
             <ul>
               {room.acceptedArtifactIds.map((id) => {
-                const artifact = room.artifacts.find((a) => a.id === id);
+                const artifact = room.artifacts.find((candidate) => candidate.id === id);
                 return <li key={id}>{artifact?.title ?? id}</li>;
               })}
             </ul>
           )}
           <p className="muted small">
-            Proposed artifacts do not become durable decisions until explicitly accepted.
+            A proposed artifact becomes durable only after an authorized acceptance event.
           </p>
         </Card>
 
         <Card>
-          <SectionTitle>Leave / resume experiment</SectionTitle>
-          {room.episodeActive ? (
-            <>
-              <p className="muted">
-                End the live episode. The room remains, but no new autonomous work is started.
-              </p>
-              <Button onClick={() => update(leaveEpisode(room))}>Leave episode</Button>
-            </>
+          <SectionTitle>Resume delta</SectionTitle>
+          {resumeDelta.length === 0 ? (
+            <p className="muted">No missed events since this browser session last acknowledged state.</p>
           ) : (
-            <>
-              <p className="muted">
-                Resume from the last acknowledged version and inspect only the durable delta.
-              </p>
-              <Button onClick={() => update(resumeRoom(room))}>Resume room</Button>
-            </>
+            <ul>
+              {resumeDelta.map((event) => (
+                <li key={event.id}>
+                  v{event.version}: {event.summary}
+                </li>
+              ))}
+            </ul>
           )}
-          {resumeDelta && (
-            <div className="delta">
-              <strong>Since last acknowledged state</strong>
-              <ul>
-                {resumeDelta.length ? resumeDelta.map((x) => <li key={x}>{x}</li>) : <li>No durable changes.</li>}
-              </ul>
-            </div>
-          )}
+          <p className="muted small">
+            The delta is event/state based, not a saved transcript.
+          </p>
         </Card>
       </section>
 
       <footer>
-        P0-a is intentionally local-first scaffolding. WebRTC signaling, multi-client synchronization,
-        real model adapters, authentication, and persistence service come next.
+        P0-b keeps room state in server memory. Restarting the room service resets it. Real identity,
+        durable server storage, WebRTC audio, and model providers remain intentionally outside this rung.
       </footer>
     </main>
   );
