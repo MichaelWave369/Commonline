@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. The current rung adds one-to-one WebRTC human audio on top of the server-authoritative synchronized room while keeping live media outside durable room state.
+This repository is at the **P0 prototype** stage. P0-d freezes identity, authority, acceptance, reconnect, observer, and private-scratch wire semantics before any durable database is introduced.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-c: two human browser participants can join the governed room and establish a one-to-one WebRTC audio call while the silent agent continues to operate only on selected text context.
+The current executable rung is P0-d: participants are distinct from sessions, Vessie is a real governed participant, acceptance is idempotent and grant-receipt backed, observers are read-only, and private agent scratch stays off the durable event surface.
 
 ```bash
 npm install
@@ -108,18 +108,18 @@ npm run dev
 Open the local Vite URL and exercise the current vertical slice:
 
 ```text
-Join Room from two browser sessions
-→ Human A presses Call
-→ Human B explicitly presses Answer
-→ WebRTC voice flows peer-to-peer
-→ Signaling stays ephemeral
-→ Durable room state continues separately
-→ Silent Worker can still return governed artifacts
-→ Leave / Rejoin
-→ Receive only durable missed-event delta
+Join as stable Participant
+→ Attach ephemeral Session
+→ Submit Work Item
+→ Agent uses private Scratch
+→ Agent emits room-visible Proposal
+→ Steward sends idempotent Accept Outcome
+→ Server binds exact Grant Receipt
+→ Durable Acceptance Receipt
+→ Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md) for the exact scope and the intentionally missing pieces.
+See [docs/MVP.md](docs/MVP.md) for the rung history and [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md) for the frozen P0-d schema, invariants, and works-today/does-not table.
 
 ## Working name
 
