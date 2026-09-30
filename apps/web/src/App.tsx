@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
 import { usePeerAudio } from "./usePeerAudio";
@@ -6,19 +6,24 @@ import { usePeerAudio } from "./usePeerAudio";
 export function App() {
   const roomSession = useCommonlineRoom();
   const {
-    clientId,
+    participantId,
+    sessionId,
     name,
     setName,
+    requestedRole,
+    setRequestedRole,
     room,
     connection,
     resumeDelta,
     lastEvent,
+    lastAcceptance,
+    agentStatuses,
     rtcInbox,
     notice,
     connect,
     disconnect,
     submitWork,
-    acceptArtifact,
+    acceptOutcome,
     sendRtcSignal,
     consumeRtcSignal
   } = roomSession;
@@ -45,33 +50,43 @@ export function App() {
     }
   }, [audio.remoteStream]);
 
-  const me = room?.participants.find((participant) => participant.id === clientId);
+  const me = room?.participants.find(
+    (participant) => participant.id === participantId
+  );
+
+  const activeGrant = (capability: string, subjectId = participantId) =>
+    room?.grants.find(
+      (grant) =>
+        grant.subjectParticipantId === subjectId &&
+        grant.capability === capability &&
+        !grant.revokedAt &&
+        (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
+    );
+
+  const acceptGrant = activeGrant("ACCEPT_OUTCOME");
+  const canAccept = Boolean(acceptGrant);
+  const canSpeak = Boolean(activeGrant("SPEAK"));
+  const canReceiveMedia = Boolean(activeGrant("RECEIVE_MEDIA"));
+
   const peers =
     room?.participants.filter(
       (participant) =>
-        participant.id !== clientId &&
+        participant.id !== participantId &&
         participant.kind === "human" &&
-        participant.presence === "online"
+        participant.presence === "online" &&
+        Boolean(activeGrant("RECEIVE_MEDIA", participant.id))
     ) ?? [];
-  const peer = room?.participants.find((participant) => participant.id === audio.peerId);
-  const canAccept = room?.grants.some(
-    (grant) =>
-      grant.principalId === clientId &&
-      grant.capability === "ACCEPT_OUTCOME" &&
-      grant.allowed
+
+  const peer = room?.participants.find(
+    (participant) => participant.id === audio.peerId
   );
-  const canSpeak = room?.grants.some(
-    (grant) =>
-      grant.principalId === clientId &&
-      grant.capability === "SPEAK" &&
-      grant.allowed
-  );
-  const canReceiveMedia = room?.grants.some(
-    (grant) =>
-      grant.principalId === clientId &&
-      grant.capability === "RECEIVE_MEDIA" &&
-      grant.allowed
-  );
+
+  const agentStatus = useMemo(() => {
+    const statuses = Object.values(agentStatuses).filter(
+      (status) => status.participantId === "agent-vessie"
+    );
+    return statuses.at(-1) ?? null;
+  }, [agentStatuses]);
 
   function leaveEpisode() {
     if (audio.state !== "idle") audio.hangup();
@@ -82,22 +97,23 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-c</div>
-          <h1>{room?.purpose ?? "Human voice inside a governed shared room"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-d WIRE FREEZE</div>
+          <h1>{room?.purpose ?? "Identity, authority, scratch, propose, accept"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
           <Badge>AUDIO {audio.state.toUpperCase()}</Badge>
+          {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
       </header>
 
       <section className="hero-grid">
         <Card>
-          <SectionTitle>Join the live episode</SectionTitle>
+          <SectionTitle>Participant ≠ session</SectionTitle>
           <p className="muted">
-            Room identity is still a temporary browser-session principal. Audio access is requested
-            separately when you place or answer a call.
+            Your participant identity survives reconnects. This tab has a separate ephemeral
+            session identity, so a reconnect replaces transport instead of inventing another person.
           </p>
           <input
             className="text-input"
@@ -106,6 +122,20 @@ export function App() {
             disabled={connection !== "disconnected"}
             aria-label="Display name"
           />
+          <select
+            className="text-input"
+            value={requestedRole}
+            onChange={(event) =>
+              setRequestedRole(
+                event.target.value === "observer" ? "observer" : "participant"
+              )
+            }
+            disabled={connection !== "disconnected"}
+            aria-label="Requested room role"
+          >
+            <option value="participant">Participant</option>
+            <option value="observer">Observer (read-only stub)</option>
+          </select>
           <div className="button-row">
             {connection === "disconnected" ? (
               <Button onClick={connect} disabled={!name.trim()}>
@@ -118,21 +148,28 @@ export function App() {
             )}
           </div>
           {notice && <p className="notice">{notice}</p>}
-          <div className="muted small">Session principal: {clientId}</div>
+          <div className="muted small">Participant: {participantId}</div>
+          <div className="muted small">Session: {sessionId}</div>
         </Card>
 
         <Card>
-          <SectionTitle>Media authority</SectionTitle>
+          <SectionTitle>Grant receipts</SectionTitle>
           <div className="grant-grid">
-            <Badge>YOU RECEIVE MEDIA {canReceiveMedia ? "✓" : "✕"}</Badge>
-            <Badge>YOU SPEAK {canSpeak ? "✓" : "✕"}</Badge>
-            <Badge>AGENT RECEIVE MEDIA ✕</Badge>
-            <Badge>AGENT SPEAK ✕</Badge>
+            <Badge>READ ROOM {activeGrant("READ_ROOM_STATE") ? "✓" : "✕"}</Badge>
+            <Badge>SUBMIT {activeGrant("SUBMIT_WORK") ? "✓" : "✕"}</Badge>
+            <Badge>SPEAK {canSpeak ? "✓" : "✕"}</Badge>
+            <Badge>RECEIVE MEDIA {canReceiveMedia ? "✓" : "✕"}</Badge>
+            <Badge>ACCEPT {canAccept ? "✓" : "✕"}</Badge>
           </div>
-          <p className="muted small">
-            P0-c does not send microphone audio to the silent worker. WebRTC signaling is ephemeral
-            and does not increment room versions or enter the durable event log.
-          </p>
+          {me && (
+            <p className="muted small">
+              Server role: <strong>{me.role}</strong>. Authority comes from grant receipts,
+              not from the role label itself.
+            </p>
+          )}
+          {acceptGrant && (
+            <div className="muted small">ACCEPT grant: {acceptGrant.grantId}</div>
+          )}
         </Card>
       </section>
 
@@ -156,7 +193,9 @@ export function App() {
           ) : audio.state === "idle" ? (
             <>
               {peers.length === 0 ? (
-                <p className="muted">Another human participant must be online before you can call.</p>
+                <p className="muted">
+                  No media-authorized human peer is online. Observers are intentionally not callable.
+                </p>
               ) : (
                 <div className="call-list">
                   {peers.map((participant) => (
@@ -198,19 +237,21 @@ export function App() {
           </audio>
 
           <p className="muted small">
-            This rung is one-to-one audio only. It intentionally does not record, transcribe, mix,
-            or persist the media stream.
+            Human WebRTC media remains ephemeral. Vessie has no SPEAK or RECEIVE_MEDIA grant.
           </p>
         </Card>
 
         <Card>
-          <SectionTitle>Live participants</SectionTitle>
+          <SectionTitle>Real participants</SectionTitle>
           {!room ? (
-            <p className="muted">Join to receive the authoritative room snapshot.</p>
+            <p className="muted">Join to receive the authoritative participant set.</p>
           ) : (
             <div className="participant-list">
               {room.participants.map((participant) => (
-                <div className="participant" key={participant.id}>
+                <div
+                  className={participant.kind === "agent" ? "participant agent" : "participant"}
+                  key={participant.id}
+                >
                   <span
                     className={
                       participant.presence === "online"
@@ -221,21 +262,19 @@ export function App() {
                   <div>
                     <strong>
                       {participant.name}
-                      {participant.id === clientId ? " (you)" : ""}
+                      {participant.id === participantId ? " (you)" : ""}
                     </strong>
                     <div className="muted small">
                       {participant.kind} · {participant.role} · {participant.presence}
                     </div>
+                    {participant.id === "agent-vessie" && (
+                      <div className="muted small">
+                        status: {agentStatus?.state ?? "idle"} · scratch content private
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
-              <div className="participant agent">
-                <span className="presence-dot" />
-                <div>
-                  <strong>Vessie (silent worker)</strong>
-                  <div className="muted small">agent · text context only · no live media grant</div>
-                </div>
-              </div>
             </div>
           )}
         </Card>
@@ -243,36 +282,38 @@ export function App() {
 
       <section className="hero-grid">
         <Card>
-          <SectionTitle>Synchronization</SectionTitle>
+          <SectionTitle>Backstage ≠ stage</SectionTitle>
           <p className="muted">
-            Durable client intents are version-bound. Media signaling uses the same authenticated
-            transport connection in the future, but remains outside durable room state.
+            Silent-agent work now has an explicit ephemeral scratch plane. Humans can see
+            content-free status, but scratch never enters RoomSnapshot, RoomEvent, resume delta,
+            or acceptance receipts.
           </p>
-          {lastEvent ? (
+          <div className="grant-grid">
+            <Badge>SCRATCH PRIVATE</Badge>
+            <Badge>STATUS VISIBLE</Badge>
+            <Badge>PROPOSAL ROOM-VISIBLE</Badge>
+            <Badge>ACCEPTANCE DURABLE</Badge>
+          </div>
+          {agentStatus && (
             <div className="delta">
-              <strong>Latest durable event</strong>
-              <p>{lastEvent.summary}</p>
-              <div className="muted small">
-                {lastEvent.type} · v{lastEvent.version}
-              </div>
+              <strong>Vessie status</strong>
+              <p>
+                {agentStatus.state} · work {agentStatus.workItemId}
+              </p>
             </div>
-          ) : (
-            <p className="muted small">No synchronized durable event received yet.</p>
           )}
         </Card>
 
         <Card>
-          <SectionTitle>Authority boundary</SectionTitle>
-          <div className="grant-grid">
-            <Badge>AGENT READ SELECTED CONTEXT ✓</Badge>
-            <Badge>AGENT WRITE DRAFT ✓</Badge>
-            <Badge>AGENT LIVE AUDIO ✕</Badge>
-            <Badge>AGENT EXECUTE ✕</Badge>
-          </div>
-          {me && (
-            <p className="muted small">
-              You are <strong>{me.role}</strong>. ACCEPT_OUTCOME: {canAccept ? "✓" : "✕"}.
-            </p>
+          <SectionTitle>Latest durable event</SectionTitle>
+          {lastEvent ? (
+            <div className="delta">
+              <strong>{lastEvent.type}</strong>
+              <p>{lastEvent.summary}</p>
+              <div className="muted small">room v{lastEvent.version}</div>
+            </div>
+          ) : (
+            <p className="muted">No synchronized durable event received yet.</p>
           )}
         </Card>
       </section>
@@ -288,9 +329,13 @@ export function App() {
           />
           <Button
             onClick={() => submitWork(taskText)}
-            disabled={connection !== "connected" || !taskText.trim()}
+            disabled={
+              connection !== "connected" ||
+              !taskText.trim() ||
+              !activeGrant("SUBMIT_WORK")
+            }
           >
-            Send server-authorized task
+            Send governed task
           </Button>
 
           <div className="timeline">
@@ -301,65 +346,98 @@ export function App() {
                 <div className="timeline-item" key={item.id}>
                   <strong>{item.status.toUpperCase()}</strong>
                   <span>{item.prompt}</span>
+                  <span className="muted small">{item.id}</span>
                 </div>
               ))}
           </div>
         </Card>
 
         <Card>
-          <SectionTitle>Artifact inbox</SectionTitle>
+          <SectionTitle>Proposal inbox</SectionTitle>
           {!room || room.artifacts.length === 0 ? (
-            <p className="muted">No proposed artifacts yet.</p>
+            <p className="muted">No room-visible proposals yet.</p>
           ) : (
             room.artifacts
               .slice()
               .reverse()
-              .map((artifact) => (
-                <article className="artifact" key={artifact.id}>
-                  <div className="artifact-head">
-                    <strong>{artifact.title}</strong>
-                    <Badge>{artifact.status}</Badge>
-                  </div>
-                  <p>{artifact.body}</p>
-                  <div className="muted small">
-                    Produced by {artifact.producedBy} · source {artifact.sourceWorkId}
-                  </div>
-                  {artifact.status === "proposed" && (
-                    <Button
-                      onClick={() => acceptArtifact(artifact.id)}
-                      disabled={!canAccept || connection !== "connected"}
-                    >
-                      {canAccept ? "Accept into durable room state" : "Steward approval required"}
-                    </Button>
-                  )}
-                </article>
-              ))
+              .map((artifact) => {
+                const acceptance = room.acceptances.find(
+                  (receipt) => receipt.artifactId === artifact.id
+                );
+
+                return (
+                  <article className="artifact" key={artifact.id}>
+                    <div className="artifact-head">
+                      <strong>{artifact.title}</strong>
+                      <Badge>{artifact.status}</Badge>
+                    </div>
+                    <p>{artifact.body}</p>
+                    <div className="muted small">
+                      Produced by {artifact.producedBy} · work {artifact.sourceWorkId}
+                    </div>
+                    {artifact.status === "proposed" && (
+                      <Button
+                        onClick={() =>
+                          acceptOutcome(artifact.sourceWorkId, artifact.id)
+                        }
+                        disabled={!canAccept || connection !== "connected"}
+                      >
+                        {canAccept
+                          ? "Accept outcome with receipt"
+                          : "ACCEPT_OUTCOME grant required"}
+                      </Button>
+                    )}
+                    {acceptance && (
+                      <div className="muted small">
+                        receipt {acceptance.receiptId} · grant {acceptance.authorityGrantId}
+                      </div>
+                    )}
+                  </article>
+                );
+              })
           )}
         </Card>
       </section>
 
       <section className="work-grid">
         <Card>
-          <SectionTitle>Durable room state</SectionTitle>
-          {!room || room.acceptedArtifactIds.length === 0 ? (
-            <p className="muted">Nothing has been accepted yet.</p>
+          <SectionTitle>Canonical accepted outcomes</SectionTitle>
+          {!room || room.acceptances.length === 0 ? (
+            <p className="muted">No work item has a canonical accepted outcome yet.</p>
           ) : (
             <ul>
-              {room.acceptedArtifactIds.map((id) => {
-                const artifact = room.artifacts.find((candidate) => candidate.id === id);
-                return <li key={id}>{artifact?.title ?? id}</li>;
+              {room.acceptances.map((receipt) => {
+                const artifact = room.artifacts.find(
+                  (candidate) => candidate.id === receipt.artifactId
+                );
+                return (
+                  <li key={receipt.receiptId}>
+                    {receipt.workItemId} → {artifact?.title ?? receipt.artifactId}
+                  </li>
+                );
               })}
             </ul>
           )}
           <p className="muted small">
-            A proposed artifact becomes durable only after an authorized acceptance event.
+            P0-d allows one current accepted outcome per work item. Supersession/retraction is
+            deliberately deferred, so “accepted” must not be treated as eternal truth.
           </p>
+          {lastAcceptance && (
+            <div className="delta">
+              <strong>Latest acceptance receipt</strong>
+              <p>{lastAcceptance.receiptId}</p>
+              <div className="muted small">
+                accept id {lastAcceptance.acceptId} · committed room v
+                {lastAcceptance.committedVersion}
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card>
           <SectionTitle>Resume delta</SectionTitle>
           {resumeDelta.length === 0 ? (
-            <p className="muted">No missed durable events since this browser last acknowledged state.</p>
+            <p className="muted">No missed durable events since this session last acknowledged state.</p>
           ) : (
             <ul>
               {resumeDelta.map((event) => (
@@ -370,15 +448,15 @@ export function App() {
             </ul>
           )}
           <p className="muted small">
-            Voice is absent by design. The delta represents governed state changes, not recorded speech.
+            Scratch, agent status changes, WebRTC signaling, and voice are absent by design.
           </p>
         </Card>
       </section>
 
       <footer>
-        P0-c adds one-to-one WebRTC voice while preserving the separation between ephemeral media and
-        durable coordination. Server storage remains in-memory and participant identity remains
-        unauthenticated in this rung.
+        P0-d freezes the wire before persistence: participant identity is distinct from session
+        transport; authority is grant-receipt based; acceptance is work-bound, idempotent and
+        single-writer; observers are read-only; and agent scratch is explicitly non-event state.
       </footer>
     </main>
   );
