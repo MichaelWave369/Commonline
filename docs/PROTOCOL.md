@@ -25,6 +25,8 @@ Commonline does not initially need a new media codec. The protocol work belongs 
 
 ```text
 CAN WORK      ≠ CAN SPEAK
+CAN SPEAK     ≠ CAN RECEIVE MEDIA
+CAN RECEIVE MEDIA ≠ CAN RECORD
 CAN SPEAK     ≠ CAN CONTACT
 CAN CONTACT   ≠ CAN DELEGATE
 CAN PROPOSE   ≠ CAN ACCEPT
@@ -35,6 +37,14 @@ CAN EXECUTE   ≠ AUTHORITY OVER EVERYTHING
 ## Attention lease
 
 Task authority does not grant interruption authority. An agent can return a silent result card, request a private cue, or ask for a speaking lease. A deterministic controller should enforce duration, audience, and cancellation.
+
+## Ephemeral media signaling
+
+P0-c adds implementation-level WebRTC signaling messages for `offer`, `answer`, `ice`, and `hangup`.
+
+These are **not durable room events** and are not candidates for resumption history. The room service checks that sender and recipient are online in the same room, that the sender has `SPEAK`, and that the target has `RECEIVE_MEDIA`, then relays the signaling payload directly.
+
+The signaling path does not imply recording, transcription, agent listening, or retention of media. Media permissions and durable coordination permissions remain independent.
 
 ## Agent-to-agent interaction
 
