@@ -1,0 +1,35 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e8f0ef;
+  background: #081014;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+.shell { max-width: 1180px; margin: 0 auto; padding: 32px 22px 64px; }
+.topbar { display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+h1 { margin: 5px 0 0; max-width: 760px; font-size: clamp(1.9rem, 4vw, 3.6rem); line-height: .98; }
+.eyebrow { letter-spacing: .16em; color: #7fd9c5; font-size: .76rem; font-weight: 800; }
+.status-row, .button-row, .grant-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.hero-grid, .work-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin: 16px 0; }
+.muted { color: #94a7a6; }
+.small { font-size: .86rem; }
+.participant-list { display: grid; gap: 12px; margin-top: 18px; }
+.participant { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #0d191d; }
+.participant.agent { border: 1px dashed #2d655c; }
+.presence-dot { width: 9px; height: 9px; border-radius: 999px; background: #7fd9c5; box-shadow: 0 0 18px #7fd9c5; }
+textarea { width: 100%; resize: vertical; border: 1px solid #254047; border-radius: 12px; padding: 12px; color: #e8f0ef; background: #071015; margin: 10px 0; }
+.timeline { margin-top: 18px; display: grid; gap: 8px; }
+.timeline-item { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid #173039; }
+.timeline-item strong { font-size: .75rem; color: #7fd9c5; }
+.artifact { padding: 14px 0; border-top: 1px solid #173039; }
+.artifact:first-of-type { border-top: 0; }
+.artifact-head { display: flex; justify-content: space-between; gap: 12px; }
+.delta { margin-top: 18px; background: #0d191d; border-radius: 12px; padding: 14px; }
+footer { margin-top: 26px; color: #728786; font-size: .86rem; line-height: 1.55; }
+@media (max-width: 780px) {
+  .hero-grid, .work-grid { grid-template-columns: 1fr; }
+  .topbar { flex-direction: column; }
+}
