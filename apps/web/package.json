@@ -9,9 +9,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@commonline/agent-runtime": "0.0.1",
     "@commonline/protocol": "0.0.1",
-    "@commonline/room-core": "0.0.1",
     "@commonline/ui": "0.0.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
