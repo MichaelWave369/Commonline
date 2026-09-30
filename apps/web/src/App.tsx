@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Capability } from "@commonline/protocol";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
 import { usePeerAudio } from "./usePeerAudio";
@@ -54,7 +55,7 @@ export function App() {
     (participant) => participant.id === participantId
   );
 
-  const activeGrant = (capability: string, subjectId = participantId) =>
+  const activeGrant = (capability: Capability, subjectId = participantId) =>
     room?.grants.find(
       (grant) =>
         grant.subjectParticipantId === subjectId &&
