@@ -24,11 +24,14 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           if [ -z "$(git ls-files package-lock.json)" ]; then
-            CONTENT="$(base64 -w0 package-lock.json)"
+            base64 -w0 package-lock.json > /tmp/package-lock.b64
+            jq -n \
+              --rawfile content /tmp/package-lock.b64 \
+              --arg message 'chore: add npm lockfile for P0-d wire freeze' \
+              --arg branch "$HEAD_REF" \
+              '{message:$message,content:$content,branch:$branch}' > /tmp/package-lock-payload.json
             gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/package-lock.json" \
-              -f message='chore: add npm lockfile for P0-d wire freeze' \
-              -f content="$CONTENT" \
-              -f branch="$HEAD_REF"
+              --input /tmp/package-lock-payload.json
           fi
       - run: npm run typecheck
       - run: npm test
