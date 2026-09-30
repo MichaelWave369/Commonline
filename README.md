@@ -89,6 +89,29 @@ Commonline/
 9. **Dormant rooms should not burn compute merely to appear alive.**
 10. **The system must preserve dissent rather than manufacture consensus.**
 
+
+## Development
+
+The first executable rung now lives on the P0 browser-room branch.
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local Vite URL and exercise the current vertical slice:
+
+```text
+Create/Resume Room
+→ Send Silent-Agent Task
+→ Receive Proposed Artifact
+→ Accept Artifact
+→ Leave Episode
+→ Resume Durable State
+```
+
+See [docs/MVP.md](docs/MVP.md) for the exact scope and the intentionally missing pieces.
+
 ## Working name
 
 **Commonline** is a working project name. Trademark and naming clearance have not yet been performed.
