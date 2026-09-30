@@ -15,6 +15,7 @@ import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { RoomService } from "./roomService";
+import { SessionRegistry } from "./sessionRegistry";
 
 const port = Number(process.env.PORT ?? 8787);
 const service = new RoomService();
@@ -39,10 +40,7 @@ const httpServer = createServer((request, response) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 const roomSockets = new Map<string, Set<WebSocket>>();
-const participantSockets = new Map<
-  string,
-  Map<string, { socket: WebSocket; sessionId: string }>
->();
+const sessions = new SessionRegistry<WebSocket>();
 
 function send(socket: WebSocket, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -189,22 +187,16 @@ wss.on("connection", (socket) => {
       }
       sockets.add(socket);
 
-      let byParticipant = participantSockets.get(message.roomId);
-      if (!byParticipant) {
-        byParticipant = new Map();
-        participantSockets.set(message.roomId, byParticipant);
-      }
-
-      const priorConnection = byParticipant.get(message.participantId);
-      byParticipant.set(message.participantId, {
-        socket,
-        sessionId: message.sessionId
+      const priorConnection = sessions.bind(message.roomId, {
+        participantId: message.participantId,
+        sessionId: message.sessionId,
+        connection: socket
       });
 
       // New connection becomes authoritative before the old socket closes.
       // The old close handler sees it has been superseded and does not emit leave.
-      if (priorConnection && priorConnection.socket !== socket) {
-        priorConnection.socket.close(4000, "session superseded");
+      if (priorConnection && priorConnection.connection !== socket) {
+        priorConnection.connection.close(4000, "session superseded");
       }
 
       const joined = service.join({
@@ -252,11 +244,12 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    const currentConnection = participantSockets
-      .get(session.roomId)
-      ?.get(session.participantId);
+    const currentConnection = sessions.current(
+      session.roomId,
+      session.participantId
+    );
 
-    if (currentConnection?.socket !== socket) {
+    if (currentConnection?.connection !== socket) {
       reject(socket, {
         requestId: message.requestId,
         code: "INVALID_SESSION",
@@ -281,10 +274,10 @@ wss.on("connection", (socket) => {
         return;
       }
 
-      const target = participantSockets
-        .get(session.roomId)
-        ?.get(message.targetParticipantId)
-        ?.socket;
+      const target = sessions.current(
+        session.roomId,
+        message.targetParticipantId
+      )?.connection;
 
       if (!target || target.readyState !== WebSocket.OPEN) {
         reject(socket, {
@@ -422,16 +415,12 @@ wss.on("connection", (socket) => {
     sockets?.delete(socket);
     if (sockets?.size === 0) roomSockets.delete(session.roomId);
 
-    const byParticipant = participantSockets.get(session.roomId);
-    const current = byParticipant?.get(session.participantId);
-    const isCurrentSocket = current?.socket === socket;
-
-    if (!isCurrentSocket) return;
-
-    byParticipant?.delete(session.participantId);
-    if (byParticipant?.size === 0) {
-      participantSockets.delete(session.roomId);
-    }
+    const wasCurrent = sessions.unbindIfCurrent(
+      session.roomId,
+      session.participantId,
+      socket
+    );
+    if (!wasCurrent) return;
 
     const left = service.leave(session.roomId, session.participantId);
     if (left) {
