@@ -1,0 +1,91 @@
+# Commonline Architecture
+
+Status: **Working architecture proposal**
+
+Commonline separates live media, durable coordination state, agent work, and external effects.
+
+```mermaid
+flowchart TD
+    Clients["Human and agent endpoints"] --> Media["Media router"]
+    Clients --> Room["Room service + policy engine"]
+    Room -->|"Approved recipients"| Media
+    Room --> Tasks["Bounded agent tasks"]
+    Tasks --> Drafts["Artifact + action proposals"]
+    Drafts --> Room
+    Room -->|"Exact execution grant"| Executor["Isolated tool executor"]
+    Executor --> External["External systems"]
+    Executor --> Receipts["Receipts + reconciliation"]
+    Receipts --> Room
+    Room --> Store["Retained state + artifact store"]
+```
+
+## Major components
+
+### Client
+Owns local media, interface state, consent choices, and the participant's acknowledged room version.
+
+### Media router
+Routes approved streams to approved recipients. Media permission is enforced before delivery. Agent failure must not break human-to-human audio.
+
+### Room service and policy engine
+Authoritative owner of room membership, state versions, grants, work state, accepted outcomes, and retention policy.
+
+### Agent task coordinator
+Dispatches bounded work using explicit context references, deadlines, leases, and budgets. Agents receive no ambient authority merely by entering a room.
+
+### Artifact and memory service
+Stores accepted outcomes, provenance, version history, and retention conditions. Raw speech is not required for room continuity.
+
+### Isolated executor
+Holds tool credentials and performs deterministic authorization immediately before any external effect.
+
+### Receipt service
+Distinguishes accepted, dispatched, completed, failed, and outcome-unknown states. Dispatch is never silently promoted to completion.
+
+## Core boundary
+
+```text
+conversation
+    ↓
+proposal
+    ↓
+policy evaluation
+    ↓
+proper authorization
+    ↓
+executor re-check
+    ↓
+dispatch
+    ↓
+observed result
+    ↓
+receipt / reconciliation
+```
+
+A conversational utterance such as "that sounds good" is not an execution grant.
+
+## Identity model
+
+Humans, agents, organizations, devices, and services remain distinct entity types. A display name or network address is not proof of identity or authority.
+
+## Media model
+
+Microphones, agent speech, music, sound effects, and playback objects should remain identifiable sources. This enables per-source routing, local gain, ducking, accessibility equivalents, and prevention of synthetic-audio feedback loops.
+
+## Persistence model
+
+The durable room state should favor reviewed outcomes:
+
+- accepted artifacts
+- unresolved questions
+- named decisions and dissent
+- active commitments
+- grants and expiry
+- provenance and evidence
+- work status
+
+A transcript is optional evidence, not authoritative memory.
+
+## Dormancy
+
+An empty room becomes dormant by default. Background work may continue only under an active, bounded lease and budget.
