@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
+import { usePeerAudio } from "./usePeerAudio";
 
 export function App() {
+  const roomSession = useCommonlineRoom();
   const {
     clientId,
     name,
@@ -11,34 +13,81 @@ export function App() {
     connection,
     resumeDelta,
     lastEvent,
+    rtcInbox,
     notice,
     connect,
     disconnect,
     submitWork,
-    acceptArtifact
-  } = useCommonlineRoom();
+    acceptArtifact,
+    sendRtcSignal,
+    consumeRtcSignal
+  } = roomSession;
 
+  const audio = usePeerAudio({
+    roomConnected: connection === "connected",
+    rtcInbox,
+    consumeRtcSignal,
+    sendRtcSignal
+  });
+
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const [taskText, setTaskText] = useState(
     "Compare two approaches and return the trade-offs as a compact artifact."
   );
 
+  useEffect(() => {
+    if (!remoteAudioRef.current) return;
+    remoteAudioRef.current.srcObject = audio.remoteStream;
+    if (audio.remoteStream) {
+      void remoteAudioRef.current.play().catch(() => {
+        // Browser autoplay policy may require the participant to press play.
+      });
+    }
+  }, [audio.remoteStream]);
+
   const me = room?.participants.find((participant) => participant.id === clientId);
+  const peers =
+    room?.participants.filter(
+      (participant) =>
+        participant.id !== clientId &&
+        participant.kind === "human" &&
+        participant.presence === "online"
+    ) ?? [];
+  const peer = room?.participants.find((participant) => participant.id === audio.peerId);
   const canAccept = room?.grants.some(
     (grant) =>
       grant.principalId === clientId &&
       grant.capability === "ACCEPT_OUTCOME" &&
       grant.allowed
   );
+  const canSpeak = room?.grants.some(
+    (grant) =>
+      grant.principalId === clientId &&
+      grant.capability === "SPEAK" &&
+      grant.allowed
+  );
+  const canReceiveMedia = room?.grants.some(
+    (grant) =>
+      grant.principalId === clientId &&
+      grant.capability === "RECEIVE_MEDIA" &&
+      grant.allowed
+  );
+
+  function leaveEpisode() {
+    if (audio.state !== "idle") audio.hangup();
+    disconnect();
+  }
 
   return (
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-b</div>
-          <h1>{room?.purpose ?? "Server-authoritative shared room"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-c</div>
+          <h1>{room?.purpose ?? "Human voice inside a governed shared room"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
+          <Badge>AUDIO {audio.state.toUpperCase()}</Badge>
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
       </header>
@@ -47,8 +96,8 @@ export function App() {
         <Card>
           <SectionTitle>Join the live episode</SectionTitle>
           <p className="muted">
-            Each browser session gets its own temporary principal ID. Authentication is deliberately
-            not claimed in this rung.
+            Room identity is still a temporary browser-session principal. Audio access is requested
+            separately when you place or answer a call.
           </p>
           <input
             className="text-input"
@@ -63,7 +112,7 @@ export function App() {
                 Join room
               </Button>
             ) : (
-              <Button onClick={disconnect} disabled={connection === "connecting"}>
+              <Button onClick={leaveEpisode} disabled={connection === "connecting"}>
                 Leave episode
               </Button>
             )}
@@ -73,22 +122,87 @@ export function App() {
         </Card>
 
         <Card>
-          <SectionTitle>Authority boundary</SectionTitle>
+          <SectionTitle>Media authority</SectionTitle>
           <div className="grant-grid">
-            <Badge>AGENT READ SELECTED CONTEXT ✓</Badge>
-            <Badge>AGENT WRITE DRAFT ✓</Badge>
+            <Badge>YOU RECEIVE MEDIA {canReceiveMedia ? "✓" : "✕"}</Badge>
+            <Badge>YOU SPEAK {canSpeak ? "✓" : "✕"}</Badge>
+            <Badge>AGENT RECEIVE MEDIA ✕</Badge>
             <Badge>AGENT SPEAK ✕</Badge>
-            <Badge>AGENT EXECUTE ✕</Badge>
           </div>
-          {me && (
-            <p className="muted small">
-              You are <strong>{me.role}</strong>. ACCEPT_OUTCOME: {canAccept ? "✓" : "✕"}.
-            </p>
-          )}
+          <p className="muted small">
+            P0-c does not send microphone audio to the silent worker. WebRTC signaling is ephemeral
+            and does not increment room versions or enter the durable event log.
+          </p>
         </Card>
       </section>
 
       <section className="hero-grid">
+        <Card>
+          <SectionTitle>Live audio</SectionTitle>
+
+          {audio.incomingOffer ? (
+            <div className="call-panel">
+              <strong>
+                Incoming audio call from {peer?.name ?? "another room participant"}
+              </strong>
+              <p className="muted small">
+                Your microphone is not opened until you choose Answer.
+              </p>
+              <div className="button-row">
+                <Button onClick={audio.answerCall}>Answer</Button>
+                <Button onClick={audio.declineCall}>Decline</Button>
+              </div>
+            </div>
+          ) : audio.state === "idle" ? (
+            <>
+              {peers.length === 0 ? (
+                <p className="muted">Another human participant must be online before you can call.</p>
+              ) : (
+                <div className="call-list">
+                  {peers.map((participant) => (
+                    <div className="call-peer" key={participant.id}>
+                      <div>
+                        <strong>{participant.name}</strong>
+                        <div className="muted small">{participant.role}</div>
+                      </div>
+                      <Button
+                        onClick={() => audio.startCall(participant.id)}
+                        disabled={!canSpeak || !canReceiveMedia}
+                      >
+                        Call
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="call-panel">
+              <strong>
+                {audio.state === "connected" ? "Connected with" : "Connecting to"}{" "}
+                {peer?.name ?? "peer"}
+              </strong>
+              <div className="button-row">
+                <Button onClick={audio.toggleMute}>
+                  {audio.muted ? "Unmute" : "Mute"}
+                </Button>
+                <Button onClick={audio.hangup}>End call</Button>
+              </div>
+            </div>
+          )}
+
+          {audio.error && <p className="notice">{audio.error}</p>}
+
+          <audio ref={remoteAudioRef} autoPlay playsInline controls className="remote-audio">
+            Remote audio playback is not supported by this browser.
+          </audio>
+
+          <p className="muted small">
+            This rung is one-to-one audio only. It intentionally does not record, transcribe, mix,
+            or persist the media stream.
+          </p>
+        </Card>
+
         <Card>
           <SectionTitle>Live participants</SectionTitle>
           {!room ? (
@@ -105,7 +219,10 @@ export function App() {
                     }
                   />
                   <div>
-                    <strong>{participant.name}</strong>
+                    <strong>
+                      {participant.name}
+                      {participant.id === clientId ? " (you)" : ""}
+                    </strong>
                     <div className="muted small">
                       {participant.kind} · {participant.role} · {participant.presence}
                     </div>
@@ -116,29 +233,46 @@ export function App() {
                 <span className="presence-dot" />
                 <div>
                   <strong>Vessie (silent worker)</strong>
-                  <div className="muted small">agent · server-owned mock adapter</div>
+                  <div className="muted small">agent · text context only · no live media grant</div>
                 </div>
               </div>
             </div>
           )}
         </Card>
+      </section>
 
+      <section className="hero-grid">
         <Card>
           <SectionTitle>Synchronization</SectionTitle>
           <p className="muted">
-            Clients send intents against a base room version. The server validates the version,
-            authority, and transition before broadcasting new state.
+            Durable client intents are version-bound. Media signaling uses the same authenticated
+            transport connection in the future, but remains outside durable room state.
           </p>
           {lastEvent ? (
             <div className="delta">
-              <strong>Latest accepted event</strong>
+              <strong>Latest durable event</strong>
               <p>{lastEvent.summary}</p>
               <div className="muted small">
                 {lastEvent.type} · v{lastEvent.version}
               </div>
             </div>
           ) : (
-            <p className="muted small">No synchronized event received yet.</p>
+            <p className="muted small">No synchronized durable event received yet.</p>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Authority boundary</SectionTitle>
+          <div className="grant-grid">
+            <Badge>AGENT READ SELECTED CONTEXT ✓</Badge>
+            <Badge>AGENT WRITE DRAFT ✓</Badge>
+            <Badge>AGENT LIVE AUDIO ✕</Badge>
+            <Badge>AGENT EXECUTE ✕</Badge>
+          </div>
+          {me && (
+            <p className="muted small">
+              You are <strong>{me.role}</strong>. ACCEPT_OUTCOME: {canAccept ? "✓" : "✕"}.
+            </p>
           )}
         </Card>
       </section>
@@ -225,7 +359,7 @@ export function App() {
         <Card>
           <SectionTitle>Resume delta</SectionTitle>
           {resumeDelta.length === 0 ? (
-            <p className="muted">No missed events since this browser session last acknowledged state.</p>
+            <p className="muted">No missed durable events since this browser last acknowledged state.</p>
           ) : (
             <ul>
               {resumeDelta.map((event) => (
@@ -236,14 +370,15 @@ export function App() {
             </ul>
           )}
           <p className="muted small">
-            The delta is event/state based, not a saved transcript.
+            Voice is absent by design. The delta represents governed state changes, not recorded speech.
           </p>
         </Card>
       </section>
 
       <footer>
-        P0-b keeps room state in server memory. Restarting the room service resets it. Real identity,
-        durable server storage, WebRTC audio, and model providers remain intentionally outside this rung.
+        P0-c adds one-to-one WebRTC voice while preserving the separation between ephemeral media and
+        durable coordination. Server storage remains in-memory and participant identity remains
+        unauthenticated in this rung.
       </footer>
     </main>
   );

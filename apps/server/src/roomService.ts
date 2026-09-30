@@ -68,6 +68,39 @@ export class RoomService {
     return this.rooms.get(roomId)?.room;
   }
 
+  canRelayRtc(roomId: string, actorId: string, targetClientId: string) {
+    const record = this.rooms.get(roomId);
+    if (!record) {
+      return { ok: false as const, code: "ROOM_NOT_FOUND" as const, message: "The room does not exist." };
+    }
+
+    if (actorId === targetClientId) {
+      return { ok: false as const, code: "INVALID_INTENT" as const, message: "A participant cannot call itself." };
+    }
+
+    const actor = record.room.participants.find(
+      (item) => item.id === actorId && item.presence === "online"
+    );
+    const target = record.room.participants.find(
+      (item) => item.id === targetClientId && item.presence === "online"
+    );
+
+    if (!actor) {
+      return { ok: false as const, code: "INVALID_SESSION" as const, message: "The sender is not an online participant." };
+    }
+    if (!target) {
+      return { ok: false as const, code: "PEER_UNAVAILABLE" as const, message: "The requested peer is not online in this room." };
+    }
+    if (!hasCapability(record.room, actorId, "SPEAK")) {
+      return { ok: false as const, code: "NOT_AUTHORIZED" as const, message: "The sender has no SPEAK grant." };
+    }
+    if (!hasCapability(record.room, targetClientId, "RECEIVE_MEDIA")) {
+      return { ok: false as const, code: "NOT_AUTHORIZED" as const, message: "The target has no RECEIVE_MEDIA grant." };
+    }
+
+    return { ok: true as const, room: record.room };
+  }
+
   join(input: {
     roomId: string;
     clientId: string;
@@ -135,7 +168,7 @@ export class RoomService {
     return { room: nextRoom, event };
   }
 
-  applyIntent(actorId: string, intent: Exclude<ClientMessage, { type: "join_room" }>): IntentResult {
+  applyIntent(actorId: string, intent: SubmitWorkMessage | AcceptArtifactMessage): IntentResult {
     const record = this.rooms.get(intent.roomId);
     if (!record) {
       return {

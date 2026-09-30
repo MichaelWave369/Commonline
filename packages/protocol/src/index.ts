@@ -34,6 +34,7 @@ export type Capability =
   | "WRITE_DRAFT_ARTIFACT"
   | "SUBMIT_WORK"
   | "ACCEPT_OUTCOME"
+  | "RECEIVE_MEDIA"
   | "SPEAK"
   | "EXECUTE_EXTERNAL_EFFECT";
 
@@ -97,10 +98,36 @@ export interface AcceptArtifactMessage {
   artifactId: string;
 }
 
+export type RtcSignalPayload =
+  | {
+      kind: "offer" | "answer";
+      sdp: string;
+    }
+  | {
+      kind: "ice";
+      candidate: string;
+      sdpMid?: string | null;
+      sdpMLineIndex?: number | null;
+      usernameFragment?: string | null;
+    }
+  | {
+      kind: "hangup";
+      reason?: "ended" | "declined" | "failed";
+    };
+
+export interface RtcSignalClientMessage {
+  type: "rtc_signal";
+  requestId: string;
+  roomId: string;
+  targetClientId: string;
+  signal: RtcSignalPayload;
+}
+
 export type ClientMessage =
   | JoinRoomMessage
   | SubmitWorkMessage
-  | AcceptArtifactMessage;
+  | AcceptArtifactMessage
+  | RtcSignalClientMessage;
 
 export interface RoomSnapshotMessage {
   type: "room_snapshot";
@@ -115,13 +142,22 @@ export interface RoomEventMessage {
   event: RoomEvent;
 }
 
+export interface RtcSignalRelayMessage {
+  type: "rtc_signal";
+  requestId: string;
+  roomId: string;
+  fromClientId: string;
+  signal: RtcSignalPayload;
+}
+
 export type RejectionCode =
   | "STALE_VERSION"
   | "NOT_AUTHORIZED"
   | "ROOM_NOT_FOUND"
   | "INVALID_INTENT"
   | "INVALID_SESSION"
-  | "ARTIFACT_NOT_FOUND";
+  | "ARTIFACT_NOT_FOUND"
+  | "PEER_UNAVAILABLE";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -135,4 +171,5 @@ export interface IntentRejectedMessage {
 export type ServerMessage =
   | RoomSnapshotMessage
   | RoomEventMessage
+  | RtcSignalRelayMessage
   | IntentRejectedMessage;

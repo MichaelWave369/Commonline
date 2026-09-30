@@ -4,14 +4,17 @@ import type {
   JoinRoomMessage,
   RoomEvent,
   RoomSnapshot,
+  RtcSignalClientMessage,
+  RtcSignalPayload,
+  RtcSignalRelayMessage,
   ServerMessage,
   SubmitWorkMessage
 } from "@commonline/protocol";
 
 const ROOM_ID = "commonline-p0";
-const CLIENT_ID_KEY = "commonline:p0b:client-id";
-const ACK_KEY = "commonline:p0b:ack";
-const NAME_KEY = "commonline:p0b:name";
+const CLIENT_ID_KEY = "commonline:p0:client-id";
+const ACK_KEY = "commonline:p0:ack";
+const NAME_KEY = "commonline:p0:name";
 
 type ConnectionState = "disconnected" | "connecting" | "connected";
 
@@ -43,6 +46,7 @@ export function useCommonlineRoom() {
   const [connection, setConnection] = useState<ConnectionState>("disconnected");
   const [resumeDelta, setResumeDelta] = useState<RoomEvent[]>([]);
   const [lastEvent, setLastEvent] = useState<RoomEvent | null>(null);
+  const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [name, setNameState] = useState(() => localStorage.getItem(NAME_KEY) ?? "Mikey");
 
@@ -95,6 +99,11 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "rtc_signal") {
+        setRtcInbox((current) => [...current, message]);
+        return;
+      }
+
       if (message.room) rememberRoom(message.room);
       setNotice(
         message.code === "STALE_VERSION"
@@ -105,6 +114,7 @@ export function useCommonlineRoom() {
 
     socket.addEventListener("close", () => {
       setConnection("disconnected");
+      setRtcInbox([]);
       socketRef.current = null;
     });
 
@@ -147,6 +157,26 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const sendRtcSignal = useCallback(
+    (targetClientId: string, signal: RtcSignalPayload) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) return false;
+      const message: RtcSignalClientMessage = {
+        type: "rtc_signal",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        targetClientId,
+        signal
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const consumeRtcSignal = useCallback((requestId: string) => {
+    setRtcInbox((current) => current.filter((message) => message.requestId !== requestId));
+  }, []);
+
   const setName = useCallback((value: string) => {
     setNameState(value);
   }, []);
@@ -159,10 +189,13 @@ export function useCommonlineRoom() {
     connection,
     resumeDelta,
     lastEvent,
+    rtcInbox,
     notice,
     connect,
     disconnect,
     submitWork,
-    acceptArtifact
+    acceptArtifact,
+    sendRtcSignal,
+    consumeRtcSignal
   };
 }

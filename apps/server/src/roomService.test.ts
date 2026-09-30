@@ -90,4 +90,26 @@ describe("RoomService authority and versioning", () => {
 
     expect(resumed.resumeDelta.some((event) => event.type === "participant_left")).toBe(true);
   });
+
+  it("authorizes RTC signaling only between online participants with media grants", () => {
+    const service = new RoomService("test room");
+    const a = service.join({
+      roomId: "r3",
+      clientId: "alice",
+      name: "Alice",
+      acknowledgedVersion: 0
+    });
+    service.join({
+      roomId: "r3",
+      clientId: "bob",
+      name: "Bob",
+      acknowledgedVersion: 0
+    });
+
+    const before = service.getRoom("r3")?.version;
+    expect(service.canRelayRtc("r3", "alice", "bob").ok).toBe(true);
+    expect(service.getRoom("r3")?.version).toBe(before);
+    expect(service.canRelayRtc("r3", "alice", "missing").ok).toBe(false);
+    expect(a.room.roomId).toBe("r3");
+  });
 });
