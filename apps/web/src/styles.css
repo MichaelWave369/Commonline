@@ -52,3 +52,31 @@ footer { margin-top: 26px; color: #728786; font-size: .86rem; line-height: 1.55;
   background: #51605d;
   box-shadow: none;
 }
+
+.call-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.call-peer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #0d191d;
+}
+.call-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #254047;
+  border-radius: 14px;
+  background: #0a1216;
+}
+.remote-audio {
+  width: 100%;
+  margin-top: 14px;
+  min-height: 42px;
+}
