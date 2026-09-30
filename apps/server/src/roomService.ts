@@ -168,7 +168,7 @@ export class RoomService {
     return { room: nextRoom, event };
   }
 
-  applyIntent(actorId: string, intent: Exclude<ClientMessage, { type: "join_room" }>): IntentResult {
+  applyIntent(actorId: string, intent: SubmitWorkMessage | AcceptArtifactMessage): IntentResult {
     const record = this.rooms.get(intent.roomId);
     if (!record) {
       return {
