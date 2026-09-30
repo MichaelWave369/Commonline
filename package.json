@@ -7,9 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @commonline/web",
-    "build": "npm run build -w @commonline/web",
+    "dev": "concurrently -n server,web \"npm run dev -w @commonline/server\" \"npm run dev -w @commonline/web\"",
+    "dev:server": "npm run dev -w @commonline/server",
+    "dev:web": "npm run dev -w @commonline/web",
+    "build": "npm run build -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
     "test": "npm run test -ws --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "vitest": "^3.2.4"
   }
 }
