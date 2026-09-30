@@ -12,7 +12,6 @@ interface IncomingOffer {
 }
 
 interface UsePeerAudioInput {
-  clientId: string;
   roomConnected: boolean;
   rtcInbox: RtcSignalRelayMessage[];
   consumeRtcSignal: (requestId: string) => void;
@@ -26,10 +25,16 @@ function rtcConfiguration(): RTCConfiguration {
   };
 }
 
-export function usePeerAudio(input: UsePeerAudioInput) {
+export function usePeerAudio({
+  roomConnected,
+  rtcInbox,
+  consumeRtcSignal,
+  sendRtcSignal
+}: UsePeerAudioInput) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const activePeerRef = useRef<string | null>(null);
+  const incomingPeerRef = useRef<string | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const processingRef = useRef(new Set<string>());
 
@@ -50,6 +55,7 @@ export function usePeerAudio(input: UsePeerAudioInput) {
     pcRef.current = null;
     stopLocalMedia();
     activePeerRef.current = null;
+    incomingPeerRef.current = null;
     pendingIceRef.current = [];
     setIncomingOffer(null);
     setPeerId(null);
@@ -78,11 +84,12 @@ export function usePeerAudio(input: UsePeerAudioInput) {
       const pc = new RTCPeerConnection(rtcConfiguration());
       pcRef.current = pc;
       activePeerRef.current = targetClientId;
+      incomingPeerRef.current = null;
       setPeerId(targetClientId);
 
       pc.addEventListener("icecandidate", (event) => {
         if (!event.candidate) return;
-        input.sendRtcSignal(targetClientId, {
+        sendRtcSignal(targetClientId, {
           kind: "ice",
           candidate: event.candidate.candidate,
           sdpMid: event.candidate.sdpMid,
@@ -101,16 +108,14 @@ export function usePeerAudio(input: UsePeerAudioInput) {
           setState("connected");
           setError(null);
         } else if (pc.connectionState === "failed") {
-          setError("WebRTC connection failed.");
+          setError("WebRTC connection failed. End the call and retry.");
           setState("error");
-        } else if (pc.connectionState === "closed") {
-          setState("idle");
         }
       });
 
       return pc;
     },
-    [input]
+    [sendRtcSignal]
   );
 
   const flushIce = useCallback(async () => {
@@ -125,7 +130,7 @@ export function usePeerAudio(input: UsePeerAudioInput) {
 
   const startCall = useCallback(
     async (targetClientId: string) => {
-      if (state !== "idle" || !input.roomConnected) return;
+      if (state !== "idle" || !roomConnected) return;
       setError(null);
       setState("calling");
       setPeerId(targetClientId);
@@ -137,21 +142,20 @@ export function usePeerAudio(input: UsePeerAudioInput) {
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        if (!offer.sdp || !input.sendRtcSignal(targetClientId, { kind: "offer", sdp: offer.sdp })) {
+        if (!offer.sdp || !sendRtcSignal(targetClientId, { kind: "offer", sdp: offer.sdp })) {
           throw new Error("Could not send the call offer.");
         }
         setState("connecting");
       } catch (cause) {
         resetCall();
         setError(cause instanceof Error ? cause.message : "Could not start audio.");
-        setState("error");
       }
     },
-    [buildPeer, input, microphone, resetCall, state]
+    [buildPeer, microphone, resetCall, roomConnected, sendRtcSignal, state]
   );
 
   const answerCall = useCallback(async () => {
-    if (!incomingOffer || !input.roomConnected) return;
+    if (!incomingOffer || !roomConnected) return;
     setError(null);
     setState("connecting");
 
@@ -168,30 +172,29 @@ export function usePeerAudio(input: UsePeerAudioInput) {
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      if (!answer.sdp || !input.sendRtcSignal(incomingOffer.fromClientId, { kind: "answer", sdp: answer.sdp })) {
+      if (!answer.sdp || !sendRtcSignal(incomingOffer.fromClientId, { kind: "answer", sdp: answer.sdp })) {
         throw new Error("Could not send the call answer.");
       }
       setIncomingOffer(null);
     } catch (cause) {
       const target = incomingOffer.fromClientId;
       resetCall();
-      input.sendRtcSignal(target, { kind: "hangup", reason: "failed" });
+      sendRtcSignal(target, { kind: "hangup", reason: "failed" });
       setError(cause instanceof Error ? cause.message : "Could not answer audio.");
-      setState("error");
     }
-  }, [buildPeer, flushIce, incomingOffer, input, microphone, resetCall]);
+  }, [buildPeer, flushIce, incomingOffer, microphone, resetCall, roomConnected, sendRtcSignal]);
 
   const declineCall = useCallback(() => {
     if (!incomingOffer) return;
-    input.sendRtcSignal(incomingOffer.fromClientId, { kind: "hangup", reason: "declined" });
+    sendRtcSignal(incomingOffer.fromClientId, { kind: "hangup", reason: "declined" });
     resetCall();
-  }, [incomingOffer, input, resetCall]);
+  }, [incomingOffer, resetCall, sendRtcSignal]);
 
   const hangup = useCallback(() => {
-    const target = activePeerRef.current ?? incomingOffer?.fromClientId ?? null;
-    if (target) input.sendRtcSignal(target, { kind: "hangup", reason: "ended" });
+    const target = activePeerRef.current ?? incomingPeerRef.current;
+    if (target) sendRtcSignal(target, { kind: "hangup", reason: "ended" });
     resetCall();
-  }, [incomingOffer, input, resetCall]);
+  }, [resetCall, sendRtcSignal]);
 
   const toggleMute = useCallback(() => {
     const stream = localStreamRef.current;
@@ -210,7 +213,7 @@ export function usePeerAudio(input: UsePeerAudioInput) {
       if (signal.kind === "hangup") {
         if (
           fromClientId === activePeerRef.current ||
-          fromClientId === incomingOffer?.fromClientId
+          fromClientId === incomingPeerRef.current
         ) {
           resetCall();
         }
@@ -218,11 +221,13 @@ export function usePeerAudio(input: UsePeerAudioInput) {
       }
 
       if (signal.kind === "offer") {
-        if (pcRef.current || incomingOffer) {
-          input.sendRtcSignal(fromClientId, { kind: "hangup", reason: "declined" });
+        if (pcRef.current || incomingPeerRef.current) {
+          sendRtcSignal(fromClientId, { kind: "hangup", reason: "declined" });
           return;
         }
+
         pendingIceRef.current = [];
+        incomingPeerRef.current = fromClientId;
         setPeerId(fromClientId);
         setIncomingOffer({ fromClientId, sdp: signal.sdp });
         setState("incoming");
@@ -240,7 +245,7 @@ export function usePeerAudio(input: UsePeerAudioInput) {
       if (
         signal.kind === "ice" &&
         (activePeerRef.current === fromClientId ||
-          incomingOffer?.fromClientId === fromClientId)
+          incomingPeerRef.current === fromClientId)
       ) {
         const candidate: RTCIceCandidateInit = {
           candidate: signal.candidate,
@@ -256,14 +261,14 @@ export function usePeerAudio(input: UsePeerAudioInput) {
         }
       }
     },
-    [flushIce, incomingOffer, input, resetCall]
+    [flushIce, resetCall, sendRtcSignal]
   );
 
   useEffect(() => {
     let cancelled = false;
 
     async function process() {
-      for (const message of input.rtcInbox) {
+      for (const message of rtcInbox) {
         if (cancelled || processingRef.current.has(message.requestId)) continue;
         processingRef.current.add(message.requestId);
         try {
@@ -272,7 +277,7 @@ export function usePeerAudio(input: UsePeerAudioInput) {
           setError(cause instanceof Error ? cause.message : "RTC signaling failed.");
           setState("error");
         } finally {
-          input.consumeRtcSignal(message.requestId);
+          consumeRtcSignal(message.requestId);
           processingRef.current.delete(message.requestId);
         }
       }
@@ -282,12 +287,12 @@ export function usePeerAudio(input: UsePeerAudioInput) {
     return () => {
       cancelled = true;
     };
-  }, [handleSignal, input]);
+  }, [consumeRtcSignal, handleSignal, rtcInbox]);
 
   useEffect(() => {
-    if (input.roomConnected) return;
+    if (roomConnected) return;
     resetCall();
-  }, [input.roomConnected, resetCall]);
+  }, [roomConnected, resetCall]);
 
   useEffect(() => {
     return () => {
