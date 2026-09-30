@@ -1,25 +1,36 @@
 import { createServer } from "node:http";
 import { MockSilentAgent } from "@commonline/agent-runtime";
-import type {
-  ClientMessage,
-  IntentRejectedMessage,
-  RoomEventMessage,
-  RoomSnapshotMessage,
-  RtcSignalPayload,
-  RtcSignalRelayMessage,
-  ServerMessage
+import {
+  COMMONLINE_WIRE_SCHEMA_VERSION,
+  type AgentWorkStatusMessage,
+  type ClientMessage,
+  type IntentRejectedMessage,
+  type RoomEventMessage,
+  type RoomSnapshotMessage,
+  type RtcSignalPayload,
+  type RtcSignalRelayMessage,
+  type ServerMessage
 } from "@commonline/protocol";
+import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { EphemeralWorkPlane } from "./ephemeralWork";
 import { RoomService } from "./roomService";
 
 const port = Number(process.env.PORT ?? 8787);
 const service = new RoomService();
-const agent = new MockSilentAgent("Vessie (silent worker)");
+const workPlane = new EphemeralWorkPlane();
+const agent = new MockSilentAgent("Vessie");
 
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ok: true, service: "commonline-room" }));
+    response.end(
+      JSON.stringify({
+        ok: true,
+        service: "commonline-room",
+        schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION
+      })
+    );
     return;
   }
   response.writeHead(404);
@@ -28,7 +39,10 @@ const httpServer = createServer((request, response) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 const roomSockets = new Map<string, Set<WebSocket>>();
-const clientSockets = new Map<string, Map<string, WebSocket>>();
+const participantSockets = new Map<
+  string,
+  Map<string, { socket: WebSocket; sessionId: string }>
+>();
 
 function send(socket: WebSocket, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -36,12 +50,27 @@ function send(socket: WebSocket, message: ServerMessage) {
   }
 }
 
-function broadcast(roomId: string, message: RoomEventMessage, except?: WebSocket) {
+function broadcast(roomId: string, message: ServerMessage, except?: WebSocket) {
   const sockets = roomSockets.get(roomId);
   if (!sockets) return;
   for (const socket of sockets) {
     if (socket !== except) send(socket, message);
   }
+}
+
+function broadcastStatus(input: {
+  roomId: string;
+  workItemId: string;
+  state: AgentWorkStatusMessage["state"];
+}) {
+  const message: AgentWorkStatusMessage = {
+    type: "agent_work_status",
+    roomId: input.roomId,
+    participantId: SILENT_AGENT_PARTICIPANT_ID,
+    workItemId: input.workItemId,
+    state: input.state
+  };
+  broadcast(input.roomId, message);
 }
 
 function reject(
@@ -83,15 +112,15 @@ function parseMessage(raw: RawData): ClientMessage | null {
     if (
       parsed.type === "join_room" ||
       parsed.type === "submit_work" ||
-      parsed.type === "accept_artifact"
+      parsed.type === "accept_outcome"
     ) {
       return parsed as ClientMessage;
     }
 
     if (
       parsed.type === "rtc_signal" &&
-      typeof parsed.targetClientId === "string" &&
-      parsed.targetClientId.length > 0 &&
+      typeof parsed.targetParticipantId === "string" &&
+      parsed.targetParticipantId.length > 0 &&
       isRtcSignalPayload(parsed.signal)
     ) {
       return parsed as ClientMessage;
@@ -104,7 +133,9 @@ function parseMessage(raw: RawData): ClientMessage | null {
 }
 
 wss.on("connection", (socket) => {
-  let session: { roomId: string; clientId: string } | null = null;
+  let session:
+    | { roomId: string; participantId: string; sessionId: string }
+    | null = null;
 
   socket.on("message", async (raw) => {
     const message = parseMessage(raw);
@@ -118,23 +149,37 @@ wss.on("connection", (socket) => {
     }
 
     if (message.type === "join_room") {
+      if (message.schemaVersion !== COMMONLINE_WIRE_SCHEMA_VERSION) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SCHEMA_VERSION_MISMATCH",
+          message: `Client schema ${message.schemaVersion ?? "unknown"} is incompatible with ${COMMONLINE_WIRE_SCHEMA_VERSION}.`
+        });
+        socket.close(4400, "schema mismatch");
+        return;
+      }
+
       if (
         !message.roomId ||
-        !message.clientId ||
+        !message.participantId ||
+        !message.sessionId ||
         !message.name?.trim() ||
+        (message.requestedRole !== "participant" &&
+          message.requestedRole !== "observer") ||
         !Number.isInteger(message.acknowledgedVersion)
       ) {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required fields."
+          message: "join_room is missing required P0-d fields."
         });
         return;
       }
 
       session = {
         roomId: message.roomId,
-        clientId: message.clientId
+        participantId: message.participantId,
+        sessionId: message.sessionId
       };
 
       let sockets = roomSockets.get(message.roomId);
@@ -144,17 +189,29 @@ wss.on("connection", (socket) => {
       }
       sockets.add(socket);
 
-      let byClient = clientSockets.get(message.roomId);
-      if (!byClient) {
-        byClient = new Map();
-        clientSockets.set(message.roomId, byClient);
+      let byParticipant = participantSockets.get(message.roomId);
+      if (!byParticipant) {
+        byParticipant = new Map();
+        participantSockets.set(message.roomId, byParticipant);
       }
-      byClient.set(message.clientId, socket);
+
+      const priorConnection = byParticipant.get(message.participantId);
+      byParticipant.set(message.participantId, {
+        socket,
+        sessionId: message.sessionId
+      });
+
+      // New connection becomes authoritative before the old socket closes.
+      // The old close handler sees it has been superseded and does not emit leave.
+      if (priorConnection && priorConnection.socket !== socket) {
+        priorConnection.socket.close(4000, "session superseded");
+      }
 
       const joined = service.join({
         roomId: message.roomId,
-        clientId: message.clientId,
+        participantId: message.participantId,
         name: message.name.trim().slice(0, 64),
+        requestedRole: message.requestedRole,
         acknowledgedVersion: Math.max(0, message.acknowledgedVersion)
       });
 
@@ -167,15 +224,12 @@ wss.on("connection", (socket) => {
       send(socket, snapshot);
 
       if (joined.event) {
-        broadcast(
-          message.roomId,
-          {
-            type: "room_event",
-            room: joined.room,
-            event: joined.event
-          },
-          socket
-        );
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: joined.room,
+          event: joined.event
+        };
+        broadcast(message.roomId, roomEvent, socket);
       }
       return;
     }
@@ -198,11 +252,24 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    const currentConnection = participantSockets
+      .get(session.roomId)
+      ?.get(session.participantId);
+
+    if (currentConnection?.socket !== socket) {
+      reject(socket, {
+        requestId: message.requestId,
+        code: "INVALID_SESSION",
+        message: "This connection has been superseded by a newer session."
+      });
+      return;
+    }
+
     if (message.type === "rtc_signal") {
       const permission = service.canRelayRtc(
         session.roomId,
-        session.clientId,
-        message.targetClientId
+        session.participantId,
+        message.targetParticipantId
       );
       if (!permission.ok) {
         reject(socket, {
@@ -214,9 +281,10 @@ wss.on("connection", (socket) => {
         return;
       }
 
-      const target = clientSockets
+      const target = participantSockets
         .get(session.roomId)
-        ?.get(message.targetClientId);
+        ?.get(message.targetParticipantId)
+        ?.socket;
 
       if (!target || target.readyState !== WebSocket.OPEN) {
         reject(socket, {
@@ -232,44 +300,117 @@ wss.on("connection", (socket) => {
         type: "rtc_signal",
         requestId: message.requestId,
         roomId: session.roomId,
-        fromClientId: session.clientId,
+        fromParticipantId: session.participantId,
         signal: message.signal
       };
       send(target, relay);
       return;
     }
 
-    const result = service.applyIntent(session.clientId, message);
+    const result = service.applyIntent(session.participantId, message);
     if (!result.ok) {
       reject(socket, {
         requestId: message.requestId,
         code: result.code,
         message: result.message,
         expectedVersion: result.room?.version,
-        room: result.room
+        room: result.room,
+        canonicalAcceptance: result.canonicalAcceptance
       });
       return;
     }
 
-    broadcast(message.roomId, {
-      type: "room_event",
-      room: result.room,
-      event: result.event
-    });
+    if (message.type === "accept_outcome" && result.acceptance) {
+      if (result.event) {
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: result.room,
+          event: result.event
+        };
+        broadcast(message.roomId, roomEvent);
+      }
+
+      send(socket, {
+        type: "acceptance_receipt",
+        requestId: message.requestId,
+        room: result.room,
+        receipt: result.acceptance,
+        replayed: Boolean(result.replayed)
+      });
+      return;
+    }
+
+    if (result.event) {
+      const roomEvent: RoomEventMessage = {
+        type: "room_event",
+        room: result.room,
+        event: result.event
+      };
+      broadcast(message.roomId, roomEvent);
+    }
 
     if (message.type === "submit_work" && result.work) {
+      const work = result.work;
+      workPlane.begin({
+        roomId: message.roomId,
+        workItemId: work.id,
+        participantId: SILENT_AGENT_PARTICIPANT_ID
+      });
+      broadcastStatus({
+        roomId: message.roomId,
+        workItemId: work.id,
+        state: "working"
+      });
+
       try {
-        const artifact = await agent.perform(result.work);
+        const artifact = await agent.perform(work);
+
+        // Application-level scratch is explicit temporary working material,
+        // not model chain-of-thought and never part of RoomSnapshot/RoomEvent.
+        workPlane.writeScratch({
+          roomId: message.roomId,
+          workItemId: work.id,
+          participantId: SILENT_AGENT_PARTICIPANT_ID,
+          content: JSON.stringify({
+            candidateArtifactId: artifact.id,
+            title: artifact.title,
+            body: artifact.body
+          })
+        });
+
         const proposed = service.proposeArtifact(message.roomId, artifact);
-        if (proposed.ok) {
-          broadcast(message.roomId, {
+        if (proposed.ok && proposed.event) {
+          const roomEvent: RoomEventMessage = {
             type: "room_event",
             room: proposed.room,
             event: proposed.event
-          });
+          };
+          broadcast(message.roomId, roomEvent);
         }
+
+        workPlane.finish({
+          roomId: message.roomId,
+          workItemId: work.id,
+          participantId: SILENT_AGENT_PARTICIPANT_ID,
+          state: "completed"
+        });
+        broadcastStatus({
+          roomId: message.roomId,
+          workItemId: work.id,
+          state: "completed"
+        });
       } catch {
-        // Agent work remains isolated from human media and room transport.
+        workPlane.finish({
+          roomId: message.roomId,
+          workItemId: work.id,
+          participantId: SILENT_AGENT_PARTICIPANT_ID,
+          state: "failed"
+        });
+        broadcastStatus({
+          roomId: message.roomId,
+          workItemId: work.id,
+          state: "failed"
+        });
       }
     }
   });
@@ -281,27 +422,31 @@ wss.on("connection", (socket) => {
     sockets?.delete(socket);
     if (sockets?.size === 0) roomSockets.delete(session.roomId);
 
-    const byClient = clientSockets.get(session.roomId);
-    const isCurrentSocket = byClient?.get(session.clientId) === socket;
-    if (isCurrentSocket) {
-      byClient?.delete(session.clientId);
-      if (byClient?.size === 0) clientSockets.delete(session.roomId);
-    }
+    const byParticipant = participantSockets.get(session.roomId);
+    const current = byParticipant?.get(session.participantId);
+    const isCurrentSocket = current?.socket === socket;
 
-    // If a newer connection replaced this socket, its participant stays online.
     if (!isCurrentSocket) return;
 
-    const left = service.leave(session.roomId, session.clientId);
+    byParticipant?.delete(session.participantId);
+    if (byParticipant?.size === 0) {
+      participantSockets.delete(session.roomId);
+    }
+
+    const left = service.leave(session.roomId, session.participantId);
     if (left) {
-      broadcast(session.roomId, {
+      const roomEvent: RoomEventMessage = {
         type: "room_event",
         room: left.room,
         event: left.event
-      });
+      };
+      broadcast(session.roomId, roomEvent);
     }
   });
 });
 
 httpServer.listen(port, () => {
-  console.log(`Commonline room service listening on http://localhost:${port}`);
+  console.log(
+    `Commonline room service listening on http://localhost:${port} (${COMMONLINE_WIRE_SCHEMA_VERSION})`
+  );
 });
