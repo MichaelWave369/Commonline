@@ -93,3 +93,48 @@ A transcript is optional evidence, not authoritative memory.
 ## Dormancy
 
 An empty room becomes dormant by default. Background work may continue only under an active, bounded lease and budget.
+
+
+## P0-d identity and session boundary
+
+P0-d freezes a participant as a logical room principal and a session as an ephemeral attachment:
+
+```text
+Participant
+  └── Session
+        └── Connection
+```
+
+The server coalesces reconnects by participant id. A replacement connection supersedes the older transport without manufacturing a second person or a durable leave/join pair.
+
+Participant identity is still locally generated and unauthenticated in P0-d.
+
+## P0-d backstage / stage boundary
+
+Agent work is split into three surfaces:
+
+```text
+PRIVATE SCRATCH
+    ↓
+ROOM PROPOSAL
+    ↓
+DURABLE ACCEPTANCE
+```
+
+Scratch is application-level temporary material, never model chain-of-thought. It lives in a separate ephemeral work plane and is never serialized into room snapshots, durable events, resume deltas, or acceptance receipts.
+
+A content-free status plane may expose `working`, `waiting`, `blocked`, `completed`, or `failed` without exposing scratch content.
+
+## Acceptance model
+
+P0-d acceptance is:
+
+- tied to one work-item id
+- tied to one artifact id
+- tied to one exact `ACCEPT_OUTCOME` grant receipt
+- keyed by a client-stable idempotency id
+- single-writer per work item
+
+A repeated request with the same accept id returns the original receipt. A competing acceptance for the same work item is rejected with the canonical receipt.
+
+Supersede/retract is intentionally not implemented yet.
