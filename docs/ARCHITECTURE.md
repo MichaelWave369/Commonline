@@ -27,6 +27,8 @@ Owns local media, interface state, consent choices, and the participant's acknow
 ### Media router
 Routes approved streams to approved recipients. Media permission is enforced before delivery. Agent failure must not break human-to-human audio.
 
+**P0-c implementation note:** the first media path is direct one-to-one WebRTC between human browsers. The room service relays offer/answer/ICE/hangup signaling only after checking live room membership plus `SPEAK` / `RECEIVE_MEDIA` grants. Signaling is ephemeral: it does not increment the room version, enter the durable event log, or appear in resume deltas. The silent agent has no live-media grant in this rung.
+
 ### Room service and policy engine
 Authoritative owner of room membership, state versions, grants, work state, accepted outcomes, and retention policy.
 
@@ -71,6 +73,8 @@ Humans, agents, organizations, devices, and services remain distinct entity type
 ## Media model
 
 Microphones, agent speech, music, sound effects, and playback objects should remain identifiable sources. This enables per-source routing, local gain, ducking, accessibility equivalents, and prevention of synthetic-audio feedback loops.
+
+The current P0-c path deliberately keeps microphone frames out of the room service. A future SFU/media-router rung can add group routing, but it must preserve the same recipient and persistence separation.
 
 ## Persistence model
 
