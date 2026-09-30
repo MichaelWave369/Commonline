@@ -26,6 +26,7 @@ export function createRoom(input: {
     grants: [
       { principalId: "silent-agent", capability: "READ_SELECTED_CONTEXT", allowed: true },
       { principalId: "silent-agent", capability: "WRITE_DRAFT_ARTIFACT", allowed: true },
+      { principalId: "silent-agent", capability: "RECEIVE_MEDIA", allowed: false },
       { principalId: "silent-agent", capability: "SPEAK", allowed: false },
       { principalId: "silent-agent", capability: "EXECUTE_EXTERNAL_EFFECT", allowed: false }
     ],
@@ -79,7 +80,9 @@ export function joinParticipant(
   const grants: Grant[] = [
     ...room.grants,
     { principalId: input.id, capability: "SUBMIT_WORK", allowed: true },
-    { principalId: input.id, capability: "ACCEPT_OUTCOME", allowed: isFirstHuman }
+    { principalId: input.id, capability: "ACCEPT_OUTCOME", allowed: isFirstHuman },
+    { principalId: input.id, capability: "RECEIVE_MEDIA", allowed: true },
+    { principalId: input.id, capability: "SPEAK", allowed: true }
   ];
 
   return {
