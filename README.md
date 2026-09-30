@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. The current rung adds a server-authoritative synchronized room while preserving the design-study boundaries.
+This repository is at the **P0 prototype** stage. The current rung adds one-to-one WebRTC human audio on top of the server-authoritative synchronized room while keeping live media outside durable room state.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-b: a synchronized browser room backed by a server-authoritative in-memory room service.
+The current executable rung is P0-c: two human browser participants can join the governed room and establish a one-to-one WebRTC audio call while the silent agent continues to operate only on selected text context.
 
 ```bash
 npm install
@@ -109,13 +109,14 @@ Open the local Vite URL and exercise the current vertical slice:
 
 ```text
 Join Room from two browser sessions
-→ Submit Version-Bound Intent
-→ Server Validates Authority + Version
-→ Broadcast Accepted Room Event
-→ Silent Worker Proposes Artifact
-→ Steward Accepts Outcome
+→ Human A presses Call
+→ Human B explicitly presses Answer
+→ WebRTC voice flows peer-to-peer
+→ Signaling stays ephemeral
+→ Durable room state continues separately
+→ Silent Worker can still return governed artifacts
 → Leave / Rejoin
-→ Receive Missed-Event Delta
+→ Receive only durable missed-event delta
 ```
 
 See [docs/MVP.md](docs/MVP.md) for the exact scope and the intentionally missing pieces.
