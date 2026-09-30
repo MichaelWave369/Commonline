@@ -7,7 +7,7 @@ import type {
   RoomSnapshotMessage,
   ServerMessage
 } from "@commonline/protocol";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { RoomService } from "./roomService";
 
 const port = Number(process.env.PORT ?? 8787);
@@ -48,7 +48,7 @@ function reject(
   send(socket, { type: "intent_rejected", ...input });
 }
 
-function parseMessage(raw: WebSocket.RawData): ClientMessage | null {
+function parseMessage(raw: RawData): ClientMessage | null {
   try {
     const parsed = JSON.parse(raw.toString()) as Partial<ClientMessage>;
     if (
