@@ -7,7 +7,7 @@ import type {
 type CallState = "idle" | "calling" | "incoming" | "connecting" | "connected" | "error";
 
 interface IncomingOffer {
-  fromClientId: string;
+  fromParticipantId: string;
   sdp: string;
 }
 
@@ -161,7 +161,7 @@ export function usePeerAudio({
 
     try {
       const stream = await microphone();
-      const pc = buildPeer(incomingOffer.fromClientId);
+      const pc = buildPeer(incomingOffer.fromParticipantId);
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
       await pc.setRemoteDescription({
@@ -172,12 +172,12 @@ export function usePeerAudio({
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      if (!answer.sdp || !sendRtcSignal(incomingOffer.fromClientId, { kind: "answer", sdp: answer.sdp })) {
+      if (!answer.sdp || !sendRtcSignal(incomingOffer.fromParticipantId, { kind: "answer", sdp: answer.sdp })) {
         throw new Error("Could not send the call answer.");
       }
       setIncomingOffer(null);
     } catch (cause) {
-      const target = incomingOffer.fromClientId;
+      const target = incomingOffer.fromParticipantId;
       resetCall();
       sendRtcSignal(target, { kind: "hangup", reason: "failed" });
       setError(cause instanceof Error ? cause.message : "Could not answer audio.");
@@ -186,7 +186,7 @@ export function usePeerAudio({
 
   const declineCall = useCallback(() => {
     if (!incomingOffer) return;
-    sendRtcSignal(incomingOffer.fromClientId, { kind: "hangup", reason: "declined" });
+    sendRtcSignal(incomingOffer.fromParticipantId, { kind: "hangup", reason: "declined" });
     resetCall();
   }, [incomingOffer, resetCall, sendRtcSignal]);
 
@@ -208,12 +208,12 @@ export function usePeerAudio({
 
   const handleSignal = useCallback(
     async (message: RtcSignalRelayMessage) => {
-      const { fromClientId, signal } = message;
+      const { fromParticipantId, signal } = message;
 
       if (signal.kind === "hangup") {
         if (
-          fromClientId === activePeerRef.current ||
-          fromClientId === incomingPeerRef.current
+          fromParticipantId === activePeerRef.current ||
+          fromParticipantId === incomingPeerRef.current
         ) {
           resetCall();
         }
@@ -222,21 +222,21 @@ export function usePeerAudio({
 
       if (signal.kind === "offer") {
         if (pcRef.current || incomingPeerRef.current) {
-          sendRtcSignal(fromClientId, { kind: "hangup", reason: "declined" });
+          sendRtcSignal(fromParticipantId, { kind: "hangup", reason: "declined" });
           return;
         }
 
         pendingIceRef.current = [];
-        incomingPeerRef.current = fromClientId;
-        setPeerId(fromClientId);
-        setIncomingOffer({ fromClientId, sdp: signal.sdp });
+        incomingPeerRef.current = fromParticipantId;
+        setPeerId(fromParticipantId);
+        setIncomingOffer({ fromParticipantId, sdp: signal.sdp });
         setState("incoming");
         return;
       }
 
       if (signal.kind === "answer") {
         const pc = pcRef.current;
-        if (!pc || activePeerRef.current !== fromClientId) return;
+        if (!pc || activePeerRef.current !== fromParticipantId) return;
         await pc.setRemoteDescription({ type: "answer", sdp: signal.sdp });
         await flushIce();
         return;
@@ -244,8 +244,8 @@ export function usePeerAudio({
 
       if (
         signal.kind === "ice" &&
-        (activePeerRef.current === fromClientId ||
-          incomingPeerRef.current === fromClientId)
+        (activePeerRef.current === fromParticipantId ||
+          incomingPeerRef.current === fromParticipantId)
       ) {
         const candidate: RTCIceCandidateInit = {
           candidate: signal.candidate,

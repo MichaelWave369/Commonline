@@ -1,115 +1,332 @@
 import { describe, expect, it } from "vitest";
 import { RoomService } from "./roomService";
 
-describe("RoomService authority and versioning", () => {
-  it("rejects stale writes and keeps ACCEPT_OUTCOME with the steward", () => {
-    const service = new RoomService("test room");
+function currentVersion(service: RoomService, roomId: string) {
+  const version = service.getRoom(roomId)?.version;
+  if (version === undefined) throw new Error("room missing");
+  return version;
+}
 
-    const a = service.join({
-      roomId: "r1",
-      clientId: "alice",
+describe("P0-d RoomService wire freeze", () => {
+  it("makes the silent worker a real participant with narrow grants", () => {
+    const service = new RoomService("test room");
+    service.join({
+      roomId: "agent-room",
+      participantId: "alice",
       name: "Alice",
+      requestedRole: "participant",
       acknowledgedVersion: 0
     });
-    const b = service.join({
-      roomId: "r1",
-      clientId: "bob",
+
+    const room = service.getRoom("agent-room")!;
+    const vessie = room.participants.find((participant) => participant.id === "agent-vessie");
+
+    expect(vessie).toMatchObject({
+      kind: "agent",
+      role: "silent-worker",
+      presence: "online"
+    });
+
+    const agentCapabilities = room.grants
+      .filter((grant) => grant.subjectParticipantId === "agent-vessie")
+      .map((grant) => grant.capability);
+
+    expect(agentCapabilities).toContain("READ_SELECTED_CONTEXT");
+    expect(agentCapabilities).toContain("WRITE_DRAFT_ARTIFACT");
+    expect(agentCapabilities).not.toContain("SPEAK");
+    expect(agentCapabilities).not.toContain("RECEIVE_MEDIA");
+    expect(agentCapabilities).not.toContain("EXECUTE_EXTERNAL_EFFECT");
+  });
+
+  it("keeps one steward grant while observers stay read-only", () => {
+    const service = new RoomService("test room");
+
+    service.join({
+      roomId: "roles",
+      participantId: "observer-first",
+      name: "Observer",
+      requestedRole: "observer",
+      acknowledgedVersion: 0
+    });
+    service.join({
+      roomId: "roles",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    service.join({
+      roomId: "roles",
+      participantId: "bob",
       name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    const room = service.getRoom("roles")!;
+    expect(room.participants.find((p) => p.id === "observer-first")?.role).toBe("observer");
+    expect(room.participants.find((p) => p.id === "alice")?.role).toBe("steward");
+    expect(room.participants.find((p) => p.id === "bob")?.role).toBe("participant");
+
+    const acceptGrants = room.grants.filter(
+      (grant) => grant.capability === "ACCEPT_OUTCOME" && !grant.revokedAt
+    );
+    expect(acceptGrants).toHaveLength(1);
+    expect(acceptGrants[0]?.subjectParticipantId).toBe("alice");
+
+    const observerSubmit = service.applyIntent("observer-first", {
+      type: "submit_work",
+      requestId: "observer-submit",
+      roomId: "roles",
+      baseVersion: room.version,
+      prompt: "I should not be allowed to submit."
+    });
+    expect(observerSubmit.ok).toBe(false);
+    if (!observerSubmit.ok) expect(observerSubmit.code).toBe("NOT_AUTHORIZED");
+
+    const observerRtc = service.canRelayRtc("roles", "observer-first", "alice");
+    expect(observerRtc.ok).toBe(false);
+    if (!observerRtc.ok) expect(observerRtc.code).toBe("NOT_AUTHORIZED");
+  });
+
+  it("rejects stale durable writes", () => {
+    const service = new RoomService("test room");
+    const alice = service.join({
+      roomId: "stale",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    service.join({
+      roomId: "stale",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
       acknowledgedVersion: 0
     });
 
     const stale = service.applyIntent("alice", {
       type: "submit_work",
-      requestId: "q-stale",
-      roomId: "r1",
-      baseVersion: a.room.version,
+      requestId: "stale-write",
+      roomId: "stale",
+      baseVersion: alice.room.version,
       prompt: "compare A and B"
     });
+
     expect(stale.ok).toBe(false);
     if (!stale.ok) expect(stale.code).toBe("STALE_VERSION");
+  });
+
+  it("binds acceptance to work, artifact and grant receipt with idempotent single-writer semantics", () => {
+    const service = new RoomService("test room");
+
+    service.join({
+      roomId: "accept",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    service.join({
+      roomId: "accept",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
 
     const submitted = service.applyIntent("bob", {
       type: "submit_work",
-      requestId: "q1",
-      roomId: "r1",
-      baseVersion: b.room.version,
+      requestId: "work",
+      roomId: "accept",
+      baseVersion: currentVersion(service, "accept"),
       prompt: "compare A and B"
     });
     expect(submitted.ok).toBe(true);
     if (!submitted.ok || !submitted.work) return;
 
-    const proposed = service.proposeArtifact("r1", {
-      id: "artifact-1",
+    const artifactA = {
+      id: "artifact-a",
       sourceWorkId: submitted.work.id,
-      title: "Comparison",
-      body: "A versus B",
-      producedBy: "silent-agent",
-      status: "proposed",
+      title: "Option A",
+      body: "A",
+      producedBy: "ignored-display-name",
+      status: "proposed" as const,
       createdAt: new Date().toISOString()
-    });
-    expect(proposed.ok).toBe(true);
-    if (!proposed.ok) return;
+    };
+    const artifactB = {
+      ...artifactA,
+      id: "artifact-b",
+      title: "Option B",
+      body: "B"
+    };
 
-    const bobAccepts = service.applyIntent("bob", {
-      type: "accept_artifact",
-      requestId: "q2",
-      roomId: "r1",
-      baseVersion: proposed.room.version,
-      artifactId: "artifact-1"
-    });
-    expect(bobAccepts.ok).toBe(false);
-    if (!bobAccepts.ok) expect(bobAccepts.code).toBe("NOT_AUTHORIZED");
+    const proposedA = service.proposeArtifact("accept", artifactA);
+    expect(proposedA.ok).toBe(true);
+    const proposedB = service.proposeArtifact("accept", artifactB);
+    expect(proposedB.ok).toBe(true);
 
-    const aliceAccepts = service.applyIntent("alice", {
-      type: "accept_artifact",
-      requestId: "q3",
-      roomId: "r1",
-      baseVersion: proposed.room.version,
-      artifactId: "artifact-1"
+    const roomBeforeAccept = service.getRoom("accept")!;
+    const stewardGrant = roomBeforeAccept.grants.find(
+      (grant) =>
+        grant.subjectParticipantId === "alice" &&
+        grant.capability === "ACCEPT_OUTCOME"
+    )!;
+    const acceptBaseVersion = roomBeforeAccept.version;
+
+    const bobTriesStewardGrant = service.applyIntent("bob", {
+      type: "accept_outcome",
+      requestId: "bad-accept",
+      roomId: "accept",
+      baseVersion: acceptBaseVersion,
+      acceptId: "accept-bad",
+      workItemId: submitted.work.id,
+      artifactId: artifactA.id,
+      authorityGrantId: stewardGrant.grantId
     });
-    expect(aliceAccepts.ok).toBe(true);
+    expect(bobTriesStewardGrant.ok).toBe(false);
+    if (!bobTriesStewardGrant.ok) {
+      expect(bobTriesStewardGrant.code).toBe("GRANT_NOT_FOUND");
+    }
+
+    const first = service.applyIntent("alice", {
+      type: "accept_outcome",
+      requestId: "accept-first",
+      roomId: "accept",
+      baseVersion: acceptBaseVersion,
+      acceptId: "accept-001",
+      workItemId: submitted.work.id,
+      artifactId: artifactA.id,
+      authorityGrantId: stewardGrant.grantId
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok || !first.acceptance) return;
+
+    expect(first.acceptance.authorityGrantId).toBe(stewardGrant.grantId);
+    expect(first.acceptance.workItemId).toBe(submitted.work.id);
+    expect(first.acceptance.artifactId).toBe(artifactA.id);
+    expect(first.replayed).toBe(false);
+
+    const committedVersion = first.room.version;
+
+    // Same acceptId with the old pre-commit base version must return the
+    // original receipt instead of failing stale or accepting twice.
+    const replay = service.applyIntent("alice", {
+      type: "accept_outcome",
+      requestId: "accept-replay",
+      roomId: "accept",
+      baseVersion: acceptBaseVersion,
+      acceptId: "accept-001",
+      workItemId: submitted.work.id,
+      artifactId: artifactA.id,
+      authorityGrantId: stewardGrant.grantId
+    });
+    expect(replay.ok).toBe(true);
+    if (!replay.ok || !replay.acceptance) return;
+    expect(replay.replayed).toBe(true);
+    expect(replay.acceptance.receiptId).toBe(first.acceptance.receiptId);
+    expect(replay.room.version).toBe(committedVersion);
+
+    const splitBrainAttempt = service.applyIntent("alice", {
+      type: "accept_outcome",
+      requestId: "accept-second",
+      roomId: "accept",
+      baseVersion: currentVersion(service, "accept"),
+      acceptId: "accept-002",
+      workItemId: submitted.work.id,
+      artifactId: artifactB.id,
+      authorityGrantId: stewardGrant.grantId
+    });
+    expect(splitBrainAttempt.ok).toBe(false);
+    if (!splitBrainAttempt.ok) {
+      expect(splitBrainAttempt.code).toBe("OUTCOME_ALREADY_ACCEPTED");
+      expect(splitBrainAttempt.canonicalAcceptance?.artifactId).toBe(artifactA.id);
+    }
+
+    const acceptedEvents = service
+      .getEventLog("accept")
+      .filter((event) => event.type === "artifact_accepted");
+    expect(acceptedEvents).toHaveLength(1);
   });
 
-  it("returns only missed events in the resume delta", () => {
+  it("coalesces same-participant reconnects without fake leave/join churn", () => {
+    const service = new RoomService("test room");
+
+    const first = service.join({
+      roomId: "reconnect",
+      participantId: "human-mikey",
+      name: "Mikey",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    const version = first.room.version;
+    const eventCount = service.getEventLog("reconnect").length;
+
+    const replacement = service.join({
+      roomId: "reconnect",
+      participantId: "human-mikey",
+      name: "Mikey",
+      requestedRole: "participant",
+      acknowledgedVersion: version
+    });
+
+    expect(replacement.room.version).toBe(version);
+    expect(replacement.event).toBeNull();
+    expect(service.getEventLog("reconnect")).toHaveLength(eventCount);
+    expect(
+      replacement.room.participants.filter((participant) => participant.id === "human-mikey")
+    ).toHaveLength(1);
+  });
+
+  it("returns only missed durable events in the resume delta", () => {
     const service = new RoomService("test room");
     const joined = service.join({
-      roomId: "r2",
-      clientId: "alice",
+      roomId: "resume",
+      participantId: "alice",
       name: "Alice",
+      requestedRole: "participant",
       acknowledgedVersion: 0
     });
 
-    service.leave("r2", "alice");
+    service.leave("resume", "alice");
 
     const resumed = service.join({
-      roomId: "r2",
-      clientId: "alice",
+      roomId: "resume",
+      participantId: "alice",
       name: "Alice",
+      requestedRole: "participant",
       acknowledgedVersion: joined.room.version
     });
 
-    expect(resumed.resumeDelta.some((event) => event.type === "participant_left")).toBe(true);
+    expect(
+      resumed.resumeDelta.some((event) => event.type === "participant_left")
+    ).toBe(true);
   });
 
-  it("authorizes RTC signaling only between online participants with media grants", () => {
+  it("authorizes RTC signaling without mutating durable room state", () => {
     const service = new RoomService("test room");
-    const a = service.join({
-      roomId: "r3",
-      clientId: "alice",
+    service.join({
+      roomId: "rtc",
+      participantId: "alice",
       name: "Alice",
+      requestedRole: "participant",
       acknowledgedVersion: 0
     });
     service.join({
-      roomId: "r3",
-      clientId: "bob",
+      roomId: "rtc",
+      participantId: "bob",
       name: "Bob",
+      requestedRole: "participant",
       acknowledgedVersion: 0
     });
 
-    const before = service.getRoom("r3")?.version;
-    expect(service.canRelayRtc("r3", "alice", "bob").ok).toBe(true);
-    expect(service.getRoom("r3")?.version).toBe(before);
-    expect(service.canRelayRtc("r3", "alice", "missing").ok).toBe(false);
-    expect(a.room.roomId).toBe("r3");
+    const beforeVersion = currentVersion(service, "rtc");
+    const beforeEvents = service.getEventLog("rtc").length;
+
+    expect(service.canRelayRtc("rtc", "alice", "bob").ok).toBe(true);
+    expect(currentVersion(service, "rtc")).toBe(beforeVersion);
+    expect(service.getEventLog("rtc")).toHaveLength(beforeEvents);
   });
 });

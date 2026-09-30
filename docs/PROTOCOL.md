@@ -84,3 +84,48 @@ A signed receipt can support attribution. It does not make the underlying claim 
 ## Federation
 
 Federation is deferred until the local semantics are proven. A future interoperability test should require two independently implemented systems to correctly handle refusal, revocation, stale context, withdrawal, and uncertain outcomes.
+
+
+## P0-d frozen wire profile
+
+Wire schema marker: `p0-d.1`.
+
+### Identity fields
+
+A join request carries both:
+
+- `participantId` — logical room principal
+- `sessionId` — ephemeral browser/runtime attachment
+
+The server binds one current live session per room + participant and may supersede an older connection.
+
+### Grant receipts
+
+Capabilities are represented by grant receipts instead of role-derived booleans. A grant receipt binds subject, capability, issuer, issue time, and optional expiry/revocation.
+
+Roles remain useful UI/context labels but are not the authority source.
+
+### Acceptance intent
+
+`accept_outcome` binds:
+
+- `acceptId`
+- `workItemId`
+- `artifactId`
+- `authorityGrantId`
+- `baseVersion`
+
+The same `acceptId` is idempotent across reconnect/retry. P0 has one canonical accepted outcome per work item.
+
+### Non-event channel
+
+Agent scratch and content-free work status are separate from the durable room event plane.
+
+```text
+scratch       -> private ephemeral
+status        -> visible ephemeral
+proposal      -> visible durable room event
+acceptance    -> durable receipt
+```
+
+Scratch must never be reconstructed from or copied into a durable receipt merely for audit convenience.
