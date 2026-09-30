@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: ["main"]
@@ -14,11 +17,19 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Capture generated lockfile for P0-d freeze
-        uses: actions/upload-artifact@v4
-        with:
-          name: commonline-package-lock
-          path: package-lock.json
+      - name: Commit generated lockfile to P0-d branch
+        if: github.event_name == 'pull_request' && github.head_ref == 'feat/p0d-wire-freeze'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ -z "$(git ls-files package-lock.json)" ]; then
+            CONTENT="$(base64 -w0 package-lock.json)"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/package-lock.json" \
+              -f message='chore: add npm lockfile for P0-d wire freeze' \
+              -f content="$CONTENT" \
+              -f branch="$HEAD_REF"
+          fi
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
