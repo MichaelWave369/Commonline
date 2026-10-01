@@ -513,6 +513,123 @@ export function App() {
 
       <section className="hero-grid">
         <Card>
+          <SectionTitle>Three-human group media proof</SectionTitle>
+          {!group.joined ? (
+            <>
+              <p className="muted">
+                P0-i admits up to three human participants to one ephemeral media
+                session. The executable adapter is mesh-p0 behind the same
+                source/subscription boundary a future SFU can implement.
+              </p>
+              <Button
+                onClick={group.join}
+                disabled={
+                  connection !== "connected" ||
+                  audio.state !== "idle" ||
+                  (!canSpeak && !canReceiveMedia)
+                }
+              >
+                Join group media
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="grant-grid">
+                <Badge>
+                  PARTICIPANTS {groupMediaState?.participants.length ?? 0}/
+                  {groupMediaState?.maxParticipants ?? 3}
+                </Badge>
+                <Badge>
+                  ROUTER {group.routerMode?.toUpperCase() ?? "UNKNOWN"}
+                </Badge>
+                <Badge>
+                  MIC {group.ownSource ? (group.muted ? "MUTED" : "PUBLISHED") : "OFF"}
+                </Badge>
+                <Badge>PEER LINKS {group.plans.length}</Badge>
+              </div>
+
+              <div className="button-row">
+                {!group.ownSource ? (
+                  <Button
+                    onClick={() => void group.enableMicrophone()}
+                    disabled={!canSpeak || !audio.rtcReady}
+                  >
+                    Publish microphone
+                  </Button>
+                ) : (
+                  <>
+                    <Button onClick={group.toggleMute}>
+                      {group.muted ? "Unmute mic" : "Mute mic"}
+                    </Button>
+                    <Button onClick={group.disableMicrophone}>
+                      Stop publishing mic
+                    </Button>
+                  </>
+                )}
+                <Button onClick={group.leave}>Leave group media</Button>
+              </div>
+
+              {group.error && <p className="notice">{group.error}</p>}
+              <p className="muted small">
+                Joining does not publish a microphone and does not subscribe you
+                to anyone. Those remain separate explicit actions.
+              </p>
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Identified sources + subscriptions</SectionTitle>
+          {!group.joined || !groupMediaState ? (
+            <p className="muted">Join group media to see ephemeral sources.</p>
+          ) : groupMediaState.sources.length === 0 ? (
+            <p className="muted">No microphone sources are published yet.</p>
+          ) : (
+            <div className="participant-list">
+              {groupMediaState.sources.map((source) => {
+                const owner = room?.participants.find(
+                  (participant) => participant.id === source.ownerParticipantId
+                );
+                const mine = source.ownerParticipantId === participantId;
+                const subscribed = groupMediaState.subscriptions.some(
+                  (subscription) =>
+                    subscription.subscriberParticipantId === participantId &&
+                    subscription.sourceId === source.sourceId
+                );
+
+                return (
+                  <div className="call-peer" key={source.sourceId}>
+                    <div>
+                      <strong>
+                        {owner?.name ?? source.ownerParticipantId}
+                        {mine ? " (your mic)" : ""}
+                      </strong>
+                      <div className="muted small">
+                        {source.kind} · {source.sourceId}
+                      </div>
+                    </div>
+                    {!mine && (
+                      <Button
+                        onClick={() =>
+                          subscribed
+                            ? group.unsubscribeSource(source.sourceId)
+                            : group.subscribeSource(source.sourceId)
+                        }
+                        disabled={!canReceiveMedia}
+                      >
+                        {subscribed ? "Unsubscribe" : "Subscribe"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
           <SectionTitle>Call path diagnostics</SectionTitle>
           <div className="grant-grid">
             <Badge>NETWORK {audio.diagnostics.networkOnline ? "ONLINE" : "OFFLINE"}</Badge>
