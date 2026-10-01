@@ -358,3 +358,18 @@ The one-time bootstrap requires the exact active ACCEPT_OUTCOME grant and issues
 Agent voice grants bind agent participant ID, voice ID, explicit-subscription audience, issuer, management authority grant, optional expiry, and committed room version.
 
 The `agent-voice` media-source policy remains reserved in P0-m. Its required authority is now `AGENT_VOICE_GRANT`, not generic SPEAK.
+
+
+## P0-n local agent voice renderer profile
+
+Wire schema: `p0-n.1`.
+
+P0-n adds the ephemeral client intent `request_agent_voice_utterance`, binding agent participant ID, exact voice grant ID, exact management authority grant ID, and the bounded `authority-proof` utterance kind.
+
+The request requires the exact active `MANAGE_AGENT_VOICE` grant and exact active agent voice grant. It is rejected when group media is absent, the renderer is unavailable, the grant is stale, or another utterance for that room/agent is already active.
+
+The server broadcasts content-free `agent_voice_utterance_status` messages with queued, rendering, speaking, completed, or failed state.
+
+Agent voice becomes an executable media-source class in P0-n, but the source may only be instantiated by the trusted server-side agent voice runtime after the active voice grant and renderer identity are revalidated. Human `group_media_publish_source` remains unable to publish an agent-owned source.
+
+The live source uses mediasoup DirectTransport and PCMU RTP injection. Listener Consumers still require the ordinary exact source subscription plus `RECEIVE_MEDIA`.
