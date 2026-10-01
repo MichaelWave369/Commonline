@@ -14,6 +14,7 @@ import {
 } from "@commonline/protocol";
 import { hasCapability, SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { agentVoiceProfile } from "./agentVoicePolicy";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
@@ -63,7 +64,8 @@ const httpServer = createServer((request, response) => {
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
         identity: "p256-challenge-response",
         groupMedia: "mediasoup-p0",
-        mediaSourcePolicy: "p0-k.1",
+        mediaSourcePolicy: "p0-m.1",
+        agentVoiceAuthority: "p0-m.1",
         sfu: sfu.status()
       })
     );
@@ -245,6 +247,9 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "submit_work" ||
       parsed.type === "accept_outcome" ||
       parsed.type === "transfer_accept_authority" ||
+      parsed.type === "bootstrap_agent_voice_authority" ||
+      parsed.type === "grant_agent_voice" ||
+      parsed.type === "revoke_agent_voice" ||
       parsed.type === "rtc_config_request" ||
       parsed.type === "rtc_call_open" ||
       parsed.type === "group_media_join" ||
@@ -464,7 +469,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-k fields."
+          message: "join_room is missing required P0-m fields."
         });
         return;
       }
@@ -663,11 +668,13 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      const sourcePolicy = mediaSourcePolicy(message.kind);
       const policyDecision = evaluateMediaSourcePolicy({
         kind: message.kind,
         publisherKind: participant.kind,
-        hasRequiredCapability: Boolean(
+        hasRequiredAuthority: Boolean(
           room &&
+            sourcePolicy?.requiredAuthority === "SPEAK" &&
             hasCapability(
               room,
               actorParticipantId,
@@ -1008,17 +1015,18 @@ wss.on("connection", (socket) => {
           participant.kind
         ) ||
         !room ||
+        sourcePolicy.requiredAuthority !== "SPEAK" ||
         !hasCapability(
           room,
           actorParticipantId,
-          sourcePolicy.requiredCapability
+          "SPEAK"
         )
       ) {
         reject(socket, {
           requestId: message.requestId,
           code: "MEDIA_SOURCE_POLICY_DENIED",
           message:
-            `Producing ${source.kind} requires its active source policy and ${sourcePolicy.requiredCapability} authority.`
+            `Producing ${source.kind} requires its active source policy and ${sourcePolicy.requiredAuthority} authority.`
         });
         return;
       }
@@ -1368,6 +1376,38 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "grant_agent_voice") {
+      if (
+        !message.agentParticipantId ||
+        !message.voiceId ||
+        !agentVoiceProfile(
+          message.agentParticipantId,
+          message.voiceId
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "VOICE_ID_INVALID",
+          message:
+            "The requested voice ID is not bound to that Commonline agent."
+        });
+        return;
+      }
+
+      if (
+        message.expiresAt &&
+        (!Number.isFinite(Date.parse(message.expiresAt)) ||
+          Date.parse(message.expiresAt) <= Date.now())
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "INVALID_INTENT",
+          message: "Agent voice expiry must be a future ISO timestamp."
+        });
+        return;
+      }
+    }
+
     const result = service.applyIntent(session.participantId, message);
     if (!result.ok) {
       reject(socket, {
@@ -1377,7 +1417,10 @@ wss.on("connection", (socket) => {
         expectedVersion: result.room?.version,
         room: result.room,
         canonicalAcceptance: result.canonicalAcceptance,
-        canonicalTransfer: result.canonicalTransfer
+        canonicalTransfer: result.canonicalTransfer,
+        canonicalVoiceBootstrap: result.canonicalVoiceBootstrap,
+        canonicalVoiceGrant: result.canonicalVoiceGrant,
+        canonicalVoiceRevocation: result.canonicalVoiceRevocation
       });
       return;
     }
@@ -1400,6 +1443,75 @@ wss.on("connection", (socket) => {
         requestId: message.requestId,
         room: result.room,
         receipt: result.authorityTransfer,
+        replayed: Boolean(result.replayed)
+      });
+      return;
+    }
+
+    if (
+      message.type === "bootstrap_agent_voice_authority" &&
+      result.voiceAuthorityBootstrap
+    ) {
+      if (result.event) {
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: result.room,
+          event: result.event
+        };
+        broadcast(message.roomId, roomEvent);
+      }
+
+      send(socket, {
+        type: "voice_authority_bootstrap_receipt",
+        requestId: message.requestId,
+        room: result.room,
+        receipt: result.voiceAuthorityBootstrap,
+        replayed: Boolean(result.replayed)
+      });
+      return;
+    }
+
+    if (
+      message.type === "grant_agent_voice" &&
+      result.agentVoiceGrant
+    ) {
+      if (result.event) {
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: result.room,
+          event: result.event
+        };
+        broadcast(message.roomId, roomEvent);
+      }
+
+      send(socket, {
+        type: "agent_voice_grant_receipt",
+        requestId: message.requestId,
+        room: result.room,
+        receipt: result.agentVoiceGrant,
+        replayed: Boolean(result.replayed)
+      });
+      return;
+    }
+
+    if (
+      message.type === "revoke_agent_voice" &&
+      result.agentVoiceRevocation
+    ) {
+      if (result.event) {
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: result.room,
+          event: result.event
+        };
+        broadcast(message.roomId, roomEvent);
+      }
+
+      send(socket, {
+        type: "agent_voice_revocation_receipt",
+        requestId: message.requestId,
+        room: result.room,
+        receipt: result.agentVoiceRevocation,
         replayed: Boolean(result.replayed)
       });
       return;
