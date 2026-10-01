@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-g.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-h.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type PrincipalKind = "human" | "agent" | "service" | "device";
@@ -255,6 +255,25 @@ export interface RtcConfigMessage {
   expiresAt?: string;
 }
 
+export interface RtcCallOpenMessage {
+  type: "rtc_call_open";
+  requestId: string;
+  roomId: string;
+  targetParticipantId: string;
+}
+
+export interface RtcCallSessionMessage {
+  type: "rtc_call_session";
+  requestId: string;
+  roomId: string;
+  callId: string;
+  generation: number;
+  peerParticipantId: string;
+  initiatorParticipantId: string;
+  polite: boolean;
+  createdAt: string;
+}
+
 export type RtcSignalPayload =
   | {
       kind: "offer" | "answer";
@@ -269,13 +288,15 @@ export type RtcSignalPayload =
     }
   | {
       kind: "hangup";
-      reason?: "ended" | "declined" | "failed";
+      reason?: "ended" | "declined" | "failed" | "peer-left" | "superseded";
     };
 
 export interface RtcSignalClientMessage {
   type: "rtc_signal";
   requestId: string;
   roomId: string;
+  callId: string;
+  generation: number;
   targetParticipantId: string;
   signal: RtcSignalPayload;
 }
@@ -289,6 +310,7 @@ export type ClientMessage =
   | AcceptOutcomeMessage
   | TransferAcceptAuthorityMessage
   | RtcConfigRequestMessage
+  | RtcCallOpenMessage
   | RtcSignalClientMessage;
 
 export interface IdentityChallengeMessage {
@@ -357,6 +379,8 @@ export interface RtcSignalRelayMessage {
   type: "rtc_signal";
   requestId: string;
   roomId: string;
+  callId: string;
+  generation: number;
   fromParticipantId: string;
   signal: RtcSignalPayload;
 }
@@ -379,7 +403,9 @@ export type RejectionCode =
   | "IDENTITY_PROOF_INVALID"
   | "IDENTITY_RECOVERY_INVALID"
   | "TRANSFER_TARGET_INVALID"
-  | "TRANSFER_ALREADY_APPLIED";
+  | "TRANSFER_ALREADY_APPLIED"
+  | "MEDIA_BUSY"
+  | "MEDIA_SESSION_STALE";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -401,5 +427,6 @@ export type ServerMessage =
   | AuthorityTransferReceiptMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
+  | RtcCallSessionMessage
   | RtcSignalRelayMessage
   | IntentRejectedMessage;
