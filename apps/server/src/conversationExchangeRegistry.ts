@@ -1,18 +1,6 @@
-export type ConversationExchangeState =
-  | "heard"
-  | "responded"
-  | "expired";
+import type { ConversationExchange } from "@commonline/protocol";
 
-export interface ConversationExchangeView {
-  exchangeId: string;
-  roomId: string;
-  humanParticipantId: string;
-  agentParticipantId: string;
-  listeningShareId: string;
-  state: ConversationExchangeState;
-  createdAt: string;
-  expiresAt: string;
-}
+type ConversationExchangeView = ConversationExchange;
 
 interface ConversationExchangeRecord extends ConversationExchangeView {
   transcript: string;
