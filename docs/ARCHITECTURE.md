@@ -438,3 +438,32 @@ agent READ_SELECTED_CONTEXT
 The target agent never becomes a subscriber to the human microphone source.
 
 Listening leases, audio, transcripts, recognizer buffers, and listening status remain outside SQLite and room-version history. Content-free status may be observed by the room while transcript content is returned only to the sharing human.
+
+
+## P0-q explicit conversation exchange gate
+
+P0-q inserts a private, memory-only exchange registry between bounded listening and agent speech:
+
+```text
+ListeningShareRuntime
+      ↓
+private transcript
+      ↓
+ConversationExchangeRegistry
+      ↓
+HEARD state
+      │
+      └── no speech
+             ↓
+separate AttentionLease
+      +
+AgentVoiceGrantReceipt
+      ↓
+AgentVoiceRuntime
+      ↓
+one exchange-bound spoken reply
+```
+
+The registry stores transcript text only in private process memory for the exchange lifetime. Public exchange views contain identifiers and state but never transcript content.
+
+A failed reply releases the exchange claim but does not restore the consumed attention lease.
