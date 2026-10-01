@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import * as mediasoup from "mediasoup";
 import type {
   Consumer,
@@ -361,8 +362,7 @@ export class MediasoupSfuAdapter {
       });
     }
 
-    const ssrc =
-      (crypto.getRandomValues(new Uint32Array(1))[0] ?? 1) || 1;
+    const ssrc = randomInt(1, 0x100000000);
     const producer = await room.directTransport.produce({
       kind: "audio",
       rtpParameters: {
@@ -393,8 +393,8 @@ export class MediasoupSfuAdapter {
       producer
     });
     room.directAudio.set(input.sourceId, {
-      sequence: Math.floor(Math.random() * 0xffff),
-      timestamp: Math.floor(Math.random() * 0xffffffff) >>> 0,
+      sequence: randomInt(0, 0x10000),
+      timestamp: randomInt(0, 0x100000000) >>> 0,
       ssrc,
       queue: Promise.resolve()
     });
