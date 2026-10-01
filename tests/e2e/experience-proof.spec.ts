@@ -121,6 +121,7 @@ test("P0-t proves concurrent work, explicit acceptance, and selective resumption
     await expect(bobAliceFxConsumer).toHaveCount(1);
     await alice.page.getByTestId("trigger-sound-effect").click();
     await expectPackets(bobAliceFxConsumer);
+    const cuePackets = await packetCount(bobAliceFxConsumer);
 
     const packetsBeforeWork = await packetCount(bobAliceMicConsumer);
 
@@ -229,7 +230,7 @@ test("P0-t proves concurrent work, explicit acceptance, and selective resumption
       },
       participantOwnedCue: {
         source: "Alice:sound-effect",
-        deliveredPackets: await packetCount(bobAliceFxConsumer)
+        deliveredPackets: cuePackets
       },
       authoritySplit: {
         bobCouldSubmitWork: true,
