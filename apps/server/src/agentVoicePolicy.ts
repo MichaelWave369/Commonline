@@ -4,7 +4,7 @@ export interface AgentVoiceProfile {
   voiceId: string;
   agentParticipantId: string;
   label: string;
-  rendererState: "not-wired";
+  rendererState: "local-adapter";
   engineBoundary: "local-tts-adapter";
 }
 
@@ -13,7 +13,7 @@ const profiles: AgentVoiceProfile[] = [
     voiceId: "vessie-local-v1",
     agentParticipantId: SILENT_AGENT_PARTICIPANT_ID,
     label: "Vessie local voice",
-    rendererState: "not-wired",
+    rendererState: "local-adapter",
     engineBoundary: "local-tts-adapter"
   }
 ];
