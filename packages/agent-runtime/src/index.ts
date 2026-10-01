@@ -5,10 +5,24 @@ export interface SilentAgent {
   perform(work: WorkItem): Promise<Artifact>;
   composeVoiceProof(): Promise<string>;
   composeDirectedTurn(prompt: string): Promise<string>;
+  observeSharedTranscript(
+    transcript: string
+  ): Promise<{ wordCount: number; characterCount: number }>;
 }
 
 export class MockSilentAgent implements SilentAgent {
   constructor(public readonly name: string) {}
+
+  async observeSharedTranscript(transcript: string) {
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    return {
+      wordCount: transcript
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length,
+      characterCount: transcript.length
+    };
+  }
 
   async composeDirectedTurn(prompt: string): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 140));
