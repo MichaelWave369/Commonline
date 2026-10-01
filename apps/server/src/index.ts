@@ -599,6 +599,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -608,6 +609,11 @@ wss.on("connection", (socket) => {
         roomId: session.roomId,
         participantId: session.participantId
       });
+      sfu.closeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -645,6 +651,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -666,6 +673,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -704,6 +712,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -725,6 +734,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
