@@ -227,3 +227,32 @@ Call setup, disconnected-peer grace, unanswered ringing, microphone loss, and fa
 ### Diagnostics boundary
 
 Candidate types and WebRTC stats are local observational telemetry. P0-g does not add them to SQLite, room events, or resumption deltas.
+
+
+## P0-h ephemeral media-session layer
+
+One-to-one WebRTC negotiation now sits behind an explicit server-arbitrated media session:
+
+```text
+Room participant A
+       ↓
+rtc_call_open
+       ↓
+MediaSessionRegistry
+       ↓
+callId + generation
+       ↓
+WebRTC negotiation
+       ↓
+STUN / TURN selected path
+```
+
+Media sessions are deliberately not durable room entities.
+
+The registry coalesces simultaneous call opens for the same pair, prevents a participant from occupying two calls, rejects stale generations, and ends the exact active call when a participant leaves.
+
+### Perfect-negotiation boundary
+
+Each side receives a deterministic polite/impolite role. SDP glare is resolved in the browser using the standard perfect-negotiation pattern while every signal remains bound to the server-issued call id and generation.
+
+This allows negotiation state to be disposable while room identity, authority, work, and accepted outcomes remain durable.

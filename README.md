@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-g hardens one-to-one internet calling with authenticated STUN/TURN configuration, secure signaling defaults, failure cleanup, and live WebRTC path diagnostics.
+This repository is at the **P0 prototype** stage. P0-h gives every live one-to-one call a server-issued ephemeral identity and generation, then uses WebRTC perfect negotiation to resolve simultaneous-offer glare.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-g: authenticated humans can establish one-to-one WebRTC audio using direct ICE or configured TURN relay paths while connectivity telemetry remains ephemeral and separate from room authority.
+The current executable rung is P0-h: authenticated humans open exact ephemeral media sessions, all SDP/ICE signaling is generation-bound, and stale or collided negotiations cannot become a second call reality.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md).
 
 ## Working name
 

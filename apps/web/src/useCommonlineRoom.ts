@@ -13,6 +13,8 @@ import {
   type RequestedHumanRole,
   type RoomEvent,
   type RoomSnapshot,
+  type RtcCallOpenMessage,
+  type RtcCallSessionMessage,
   type RtcConfigMessage,
   type RtcConfigRequestMessage,
   type RtcSignalClientMessage,
@@ -106,6 +108,7 @@ export function useCommonlineRoom() {
   const [lastAuthorityTransfer, setLastAuthorityTransfer] =
     useState<AuthorityTransferReceipt | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
+  const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [rtcConfig, setRtcConfig] = useState<RtcConfigMessage | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<
     Record<string, AgentWorkStatusMessage>
@@ -405,6 +408,11 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "rtc_call_session") {
+        setRtcSessionInbox((current) => [...current, message]);
+        return;
+      }
+
       if (message.type === "rtc_signal") {
         setRtcInbox((current) => [...current, message]);
         return;
@@ -449,6 +457,7 @@ export function useCommonlineRoom() {
         socketRef.current = null;
       }
       setRtcInbox([]);
+      setRtcSessionInbox([]);
       setRtcConfig(null);
       clearRtcConfigTimer();
       setIdentityState("idle");
@@ -664,8 +673,31 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const openRtcCall = useCallback(
+    (targetParticipantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RtcCallOpenMessage = {
+        type: "rtc_call_open",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        targetParticipantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const sendRtcSignal = useCallback(
-    (targetParticipantId: string, signal: RtcSignalPayload) => {
+    (
+      targetParticipantId: string,
+      callId: string,
+      generation: number,
+      signal: RtcSignalPayload
+    ) => {
       if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
         return false;
       }
@@ -673,6 +705,8 @@ export function useCommonlineRoom() {
         type: "rtc_signal",
         requestId: crypto.randomUUID(),
         roomId: room.roomId,
+        callId,
+        generation,
         targetParticipantId,
         signal
       };
@@ -681,6 +715,12 @@ export function useCommonlineRoom() {
     },
     [room]
   );
+
+  const consumeRtcSession = useCallback((requestId: string) => {
+    setRtcSessionInbox((current) =>
+      current.filter((message) => message.requestId !== requestId)
+    );
+  }, []);
 
   const consumeRtcSignal = useCallback((requestId: string) => {
     setRtcInbox((current) =>
@@ -717,6 +757,7 @@ export function useCommonlineRoom() {
     lastAuthorityTransfer,
     agentStatuses,
     rtcInbox,
+    rtcSessionInbox,
     rtcConfig,
     notice,
     connect,
@@ -724,7 +765,9 @@ export function useCommonlineRoom() {
     submitWork,
     acceptOutcome,
     transferAcceptAuthority,
+    openRtcCall,
     sendRtcSignal,
+    consumeRtcSession,
     consumeRtcSignal
   };
 }
