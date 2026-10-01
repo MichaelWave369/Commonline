@@ -8,7 +8,6 @@ import {
   type AgentVoiceRevocationReceipt,
   type AgentVoiceUtteranceStatusMessage,
   type AttentionLease,
-  type AttentionLeaseStateMessage,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
   type BootstrapAgentVoiceAuthorityMessage,
