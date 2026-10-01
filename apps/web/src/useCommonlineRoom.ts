@@ -7,7 +7,7 @@ import {
   type AuthorityTransferReceipt,
   type GroupMediaJoinMessage,
   type GroupMediaLeaveMessage,
-  type GroupMediaPublishMicrophoneMessage,
+  type GroupMediaPublishSourceMessage,
   type GroupMediaStateMessage,
   type GroupMediaSubscribeMessage,
   type GroupMediaUnpublishMessage,
@@ -19,6 +19,7 @@ import {
   type IdentityProveMessage,
   type IdentityRecoverMessage,
   type JoinRoomMessage,
+  type MediaSourceKind,
   type RequestedHumanRole,
   type RoomEvent,
   type RoomSnapshot,
@@ -856,7 +857,7 @@ export function useCommonlineRoom() {
     (message:
       | GroupMediaJoinMessage
       | GroupMediaLeaveMessage
-      | GroupMediaPublishMicrophoneMessage
+      | GroupMediaPublishSourceMessage
       | GroupMediaUnpublishMessage
       | GroupMediaSubscribeMessage
       | GroupMediaUnsubscribeMessage
@@ -893,14 +894,19 @@ export function useCommonlineRoom() {
     return sent;
   }, [room, sendGroupMessage]);
 
-  const publishGroupMicrophone = useCallback(() => {
-    if (!room) return false;
-    return sendGroupMessage({
-      type: "group_media_publish_microphone",
-      requestId: crypto.randomUUID(),
-      roomId: room.roomId
-    });
-  }, [room, sendGroupMessage]);
+  const publishGroupSource = useCallback(
+    (kind: MediaSourceKind, label: string) => {
+      if (!room) return false;
+      return sendGroupMessage({
+        type: "group_media_publish_source",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        kind,
+        label
+      });
+    },
+    [room, sendGroupMessage]
+  );
 
   const unpublishGroupSource = useCallback(
     (sourceId: string) => {
@@ -1023,7 +1029,7 @@ export function useCommonlineRoom() {
     sendRtcSignal,
     joinGroupMedia,
     leaveGroupMedia,
-    publishGroupMicrophone,
+    publishGroupSource,
     unpublishGroupSource,
     subscribeGroupSource,
     unsubscribeGroupSource,
