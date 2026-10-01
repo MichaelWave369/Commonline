@@ -376,3 +376,42 @@ See [MEDIA_P0G.md](MEDIA_P0G.md).
 ### Next rung
 
 After P0-g, the first one-to-one call has enough networking structure to justify choosing between multi-party media/SFU work and the separate Voice Kit / governed agent-speech track.
+
+
+## P0-h — ephemeral media session identity + perfect negotiation
+
+P0-h makes each one-to-one call an exact ephemeral object.
+
+```text
+rtc_call_open
+      ↓
+server media-session arbitration
+      ↓
+callId + generation
+      ↓
+perfect negotiation
+      ↓
+offer / answer / ICE bound to exact call
+```
+
+### Implemented in this rung
+
+- server-issued ephemeral call ids
+- monotonic generations per participant pair
+- one active call per participant
+- simultaneous opens for the same pair coalesce
+- deterministic polite / impolite peers
+- WebRTC perfect-negotiation glare handling
+- offer / answer / ICE / hangup bound to call id + generation
+- stale-generation rejection
+- exact-session hangup
+- peer-left server cleanup
+- recipient microphone still requires explicit Answer
+- no media-session persistence
+- P0-g -> P0-h storage/wire metadata migration
+
+See [MEDIA_SESSION_P0H.md](MEDIA_SESSION_P0H.md).
+
+### Next rung
+
+P0-h gives a future SFU a clean object to route. Multi-party media can now be designed around explicit ephemeral sessions without weakening durable room semantics or human media consent.
