@@ -20,6 +20,7 @@ import {
   SILENT_AGENT_PARTICIPANT_ID,
   submitWork
 } from "@commonline/room-core";
+import type { DurableRoomStore } from "./roomStore";
 
 interface RoomRecord {
   room: RoomSnapshot;
@@ -66,15 +67,49 @@ export class RoomService {
   private readonly rooms = new Map<string, RoomRecord>();
 
   constructor(
-    private readonly defaultPurpose = "Prove concurrent work + trustworthy resumption"
+    private readonly defaultPurpose = "Prove concurrent work + trustworthy resumption",
+    private readonly store?: DurableRoomStore
   ) {}
 
+  private record(roomId: string) {
+    const cached = this.rooms.get(roomId);
+    if (cached) return cached;
+
+    const persistedRoom = this.store?.loadRoom(roomId);
+    if (!persistedRoom) return undefined;
+
+    const loaded: RoomRecord = {
+      room: persistedRoom,
+      events: this.store?.loadEvents(roomId) ?? []
+    };
+    this.rooms.set(roomId, loaded);
+    return loaded;
+  }
+
+  private commitTransition(
+    record: RoomRecord,
+    nextRoom: RoomSnapshot,
+    event: RoomEvent,
+    expectedPreviousVersion: number
+  ) {
+    // Disk first, memory second. A failed SQLite transaction must never leave
+    // the process believing a transition committed when durable state did not.
+    this.store?.saveTransition({
+      room: nextRoom,
+      event,
+      expectedPreviousVersion
+    });
+
+    record.room = nextRoom;
+    record.events.push(event);
+  }
+
   getRoom(roomId: string) {
-    return this.rooms.get(roomId)?.room;
+    return this.record(roomId)?.room;
   }
 
   getEventLog(roomId: string) {
-    return [...(this.rooms.get(roomId)?.events ?? [])];
+    return [...(this.record(roomId)?.events ?? [])];
   }
 
   canRelayRtc(
@@ -82,7 +117,7 @@ export class RoomService {
     actorParticipantId: string,
     targetParticipantId: string
   ) {
-    const record = this.rooms.get(roomId);
+    const record = this.record(roomId);
     if (!record) {
       return {
         ok: false as const,
@@ -151,7 +186,9 @@ export class RoomService {
     requestedRole: RequestedHumanRole;
     acknowledgedVersion: number;
   }) {
-    let record = this.rooms.get(input.roomId);
+    let record = this.record(input.roomId);
+    const created = !record;
+
     if (!record) {
       record = {
         room: createRoom({
@@ -160,7 +197,6 @@ export class RoomService {
         }),
         events: []
       };
-      this.rooms.set(input.roomId, record);
     }
 
     const resumeDelta = record.events.filter(
@@ -182,8 +218,12 @@ export class RoomService {
         actorId: input.participantId,
         summary: `${input.name} joined the live episode.`
       });
-      record.events.push(event);
-      record.room = nextRoom;
+
+      this.commitTransition(record, nextRoom, event, priorVersion);
+    }
+
+    if (created) {
+      this.rooms.set(input.roomId, record);
     }
 
     return {
@@ -194,7 +234,7 @@ export class RoomService {
   }
 
   leave(roomId: string, participantId: string) {
-    const record = this.rooms.get(roomId);
+    const record = this.record(roomId);
     if (!record) return null;
 
     const participant = record.room.participants.find(
@@ -210,8 +250,8 @@ export class RoomService {
       actorId: participantId,
       summary: `${participant?.name ?? "A participant"} left the live episode.`
     });
-    record.events.push(event);
-    record.room = nextRoom;
+
+    this.commitTransition(record, nextRoom, event, priorVersion);
     return { room: nextRoom, event };
   }
 
@@ -219,7 +259,7 @@ export class RoomService {
     actorParticipantId: string,
     intent: SubmitWorkMessage | AcceptOutcomeMessage
   ): IntentResult {
-    const record = this.rooms.get(intent.roomId);
+    const record = this.record(intent.roomId);
     if (!record) {
       return {
         ok: false,
@@ -243,8 +283,9 @@ export class RoomService {
       };
     }
 
-    // Idempotent acceptance replay must succeed even when the retry carries
-    // the pre-commit room version from a connection that died after commit.
+    // Idempotent acceptance replay is checked before stale-version rejection.
+    // If the process died after SQLite COMMIT but before the response reached
+    // the browser, a retry after restart returns the original receipt.
     if (intent.type === "accept_outcome") {
       const prior = record.room.acceptances.find(
         (receipt) => receipt.acceptId === intent.acceptId
@@ -299,6 +340,7 @@ export class RoomService {
       };
     }
 
+    const priorVersion = record.room.version;
     const transition = submitWork(record.room, {
       requestedBy: actorParticipantId,
       prompt
@@ -313,8 +355,13 @@ export class RoomService {
       summary: `${participant?.name ?? "A participant"} submitted bounded work.`
     });
 
-    record.room = transition.room;
-    record.events.push(event);
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
+
     return {
       ok: true,
       room: record.room,
@@ -328,6 +375,7 @@ export class RoomService {
     actorParticipantId: string,
     intent: AcceptOutcomeMessage
   ): IntentResult {
+    const priorVersion = record.room.version;
     const transition = acceptOutcome(record.room, {
       acceptId: intent.acceptId,
       workItemId: intent.workItemId,
@@ -365,8 +413,12 @@ export class RoomService {
       summary: `Accepted outcome for ${intent.workItemId}: ${artifact?.title ?? intent.artifactId}`
     });
 
-    record.room = transition.room;
-    record.events.push(event);
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
 
     return {
       ok: true,
@@ -378,7 +430,7 @@ export class RoomService {
   }
 
   proposeArtifact(roomId: string, artifact: Artifact): IntentResult {
-    const record = this.rooms.get(roomId);
+    const record = this.record(roomId);
     if (!record) {
       return {
         ok: false,
@@ -403,18 +455,28 @@ export class RoomService {
     }
 
     try {
+      const priorVersion = record.room.version;
       const nextRoom = proposeArtifact(record.room, {
         ...artifact,
         producedBy: SILENT_AGENT_PARTICIPANT_ID
       });
+
+      if (nextRoom.version === priorVersion) {
+        return {
+          ok: true,
+          room: record.room
+        };
+      }
+
       const event = eventFor({
         room: nextRoom,
         type: "artifact_proposed",
         actorId: SILENT_AGENT_PARTICIPANT_ID,
         summary: `Silent worker proposed artifact: ${artifact.title}`
       });
-      record.room = nextRoom;
-      record.events.push(event);
+
+      this.commitTransition(record, nextRoom, event, priorVersion);
+
       return {
         ok: true,
         room: nextRoom,
