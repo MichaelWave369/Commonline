@@ -372,8 +372,6 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "grant_agent_voice" ||
       parsed.type === "revoke_agent_voice" ||
       parsed.type === "request_agent_voice_utterance" ||
-      parsed.type === "grant_attention_lease" ||
-      parsed.type === "revoke_attention_lease" ||
       parsed.type === "rtc_config_request" ||
       parsed.type === "rtc_call_open" ||
       parsed.type === "group_media_join" ||
@@ -387,6 +385,22 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "sfu_produce" ||
       parsed.type === "sfu_consume" ||
       parsed.type === "sfu_consumer_resume"
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "grant_attention_lease" &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "revoke_attention_lease" &&
+      typeof parsed.leaseId === "string" &&
+      parsed.leaseId.length > 0
     ) {
       return parsed as ClientMessage;
     }
