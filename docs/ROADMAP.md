@@ -131,3 +131,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-s pre-membership durable history isolation with server-enforced membership floor
 
 - P0-t two-human end-to-end experience acceptance: live media + cue + concurrent silent work + explicit acceptance + selective resumption
+
+- P0-u explicit external-effect firewall: accepted artifacts remain inert without exact execution authority
