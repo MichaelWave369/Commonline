@@ -15,6 +15,10 @@ import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { IdentityService } from "./identityService";
+import {
+  isPolitePeer,
+  MediaSessionRegistry
+} from "./mediaSessionRegistry";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
@@ -56,6 +60,7 @@ const httpServer = createServer((request, response) => {
 const wss = new WebSocketServer({ server: httpServer });
 const roomSockets = new Map<string, Set<WebSocket>>();
 const sessions = new SessionRegistry<WebSocket>();
+const mediaSessions = new MediaSessionRegistry();
 
 function send(socket: WebSocket, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -110,7 +115,9 @@ function isRtcSignalPayload(value: unknown): value is RtcSignalPayload {
       candidate.reason === undefined ||
       candidate.reason === "ended" ||
       candidate.reason === "declined" ||
-      candidate.reason === "failed"
+      candidate.reason === "failed" ||
+      candidate.reason === "peer-left" ||
+      candidate.reason === "superseded"
     );
   }
 
@@ -130,7 +137,8 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "submit_work" ||
       parsed.type === "accept_outcome" ||
       parsed.type === "transfer_accept_authority" ||
-      parsed.type === "rtc_config_request"
+      parsed.type === "rtc_config_request" ||
+      parsed.type === "rtc_call_open"
     ) {
       return parsed as ClientMessage;
     }
@@ -139,6 +147,10 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "rtc_signal" &&
       typeof parsed.targetParticipantId === "string" &&
       parsed.targetParticipantId.length > 0 &&
+      typeof parsed.callId === "string" &&
+      parsed.callId.length > 0 &&
+      Number.isInteger(parsed.generation) &&
+      Number(parsed.generation) > 0 &&
       isRtcSignalPayload(parsed.signal)
     ) {
       return parsed as ClientMessage;
@@ -310,7 +322,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-f fields."
+          message: "join_room is missing required P0-h fields."
         });
         return;
       }
@@ -418,7 +430,7 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (message.type === "rtc_signal") {
+    if (message.type === "rtc_call_open") {
       const permission = service.canRelayRtc(
         session.roomId,
         session.participantId,
@@ -449,14 +461,123 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      const opened = mediaSessions.open({
+        roomId: session.roomId,
+        initiatorParticipantId: session.participantId,
+        targetParticipantId: message.targetParticipantId
+      });
+
+      if (!opened.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: opened.code,
+          message: opened.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const mediaSession = opened.session;
+
+      send(socket, {
+        type: "rtc_call_session",
+        requestId: message.requestId,
+        roomId: session.roomId,
+        callId: mediaSession.callId,
+        generation: mediaSession.generation,
+        peerParticipantId: message.targetParticipantId,
+        initiatorParticipantId: mediaSession.initiatorParticipantId,
+        polite: isPolitePeer(
+          session.participantId,
+          message.targetParticipantId
+        ),
+        createdAt: mediaSession.createdAt
+      });
+
+      send(target, {
+        type: "rtc_call_session",
+        requestId: message.requestId,
+        roomId: session.roomId,
+        callId: mediaSession.callId,
+        generation: mediaSession.generation,
+        peerParticipantId: session.participantId,
+        initiatorParticipantId: mediaSession.initiatorParticipantId,
+        polite: isPolitePeer(
+          message.targetParticipantId,
+          session.participantId
+        ),
+        createdAt: mediaSession.createdAt
+      });
+      return;
+    }
+
+    if (message.type === "rtc_signal") {
+      const permission = service.canRelayRtc(
+        session.roomId,
+        session.participantId,
+        message.targetParticipantId
+      );
+      if (!permission.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: permission.code,
+          message: permission.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const mediaValidation = mediaSessions.validate({
+        roomId: session.roomId,
+        callId: message.callId,
+        generation: message.generation,
+        actorParticipantId: session.participantId,
+        targetParticipantId: message.targetParticipantId
+      });
+
+      if (!mediaValidation.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: mediaValidation.code,
+          message: mediaValidation.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const target = sessions.current(
+        session.roomId,
+        message.targetParticipantId
+      )?.connection;
+
+      if (!target || target.readyState !== WebSocket.OPEN) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "PEER_UNAVAILABLE",
+          message: "The requested peer has no active signaling connection.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
       const relay: RtcSignalRelayMessage = {
         type: "rtc_signal",
         requestId: message.requestId,
         roomId: session.roomId,
+        callId: message.callId,
+        generation: message.generation,
         fromParticipantId: session.participantId,
         signal: message.signal
       };
       send(target, relay);
+
+      if (message.signal.kind === "hangup") {
+        mediaSessions.end({
+          roomId: session.roomId,
+          callId: message.callId,
+          generation: message.generation
+        });
+      }
       return;
     }
 
@@ -603,6 +724,35 @@ wss.on("connection", (socket) => {
       socket
     );
     if (!wasCurrent) return;
+
+    for (const ended of mediaSessions.endForParticipant(
+      session.roomId,
+      session.participantId
+    )) {
+      const peerParticipantId =
+        ended.participantAId === session.participantId
+          ? ended.participantBId
+          : ended.participantAId;
+      const peerSocket = sessions.current(
+        session.roomId,
+        peerParticipantId
+      )?.connection;
+
+      if (peerSocket?.readyState === WebSocket.OPEN) {
+        send(peerSocket, {
+          type: "rtc_signal",
+          requestId: `peer-left-${crypto.randomUUID()}`,
+          roomId: session.roomId,
+          callId: ended.callId,
+          generation: ended.generation,
+          fromParticipantId: session.participantId,
+          signal: {
+            kind: "hangup",
+            reason: "peer-left"
+          }
+        });
+      }
+    }
 
     const left = service.leave(session.roomId, session.participantId);
     if (left) {
