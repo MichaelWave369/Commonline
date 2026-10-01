@@ -6,7 +6,7 @@ function roomFixture(
   overrides: Partial<RoomSnapshot> = {}
 ): RoomSnapshot {
   return {
-    schemaVersion: "p0-q.1",
+    schemaVersion: "p0-u.1",
     roomId: "room-resume",
     purpose: "prove selective resumption",
     version: 12,
