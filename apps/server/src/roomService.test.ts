@@ -351,23 +351,41 @@ describe("P0-d RoomService wire freeze", () => {
     expect(bobFirstJoin.resumeDelta).toEqual([]);
 
     const bobKnownVersion = bobFirstJoin.room.version;
+    const bobJoinEventVersion = service
+      .getEventLog("known-history")
+      .find(
+        (event) =>
+          event.type === "participant_joined" &&
+          event.actorId === "bob"
+      )!.version;
+
     service.leave("known-history", "bob");
     service.leave("known-history", "alice");
 
+    // Deliberately lie about acknowledgement. The membership floor must still
+    // prevent Bob from receiving events that happened before Bob first joined.
     const bobResumed = service.join({
       roomId: "known-history",
       participantId: "bob",
       name: "Bob",
       requestedRole: "participant",
-      acknowledgedVersion: bobKnownVersion
+      acknowledgedVersion: 0
     });
 
     expect(bobResumed.resumeDelta.length).toBeGreaterThan(0);
     expect(
       bobResumed.resumeDelta.every(
-        (event) => event.version > bobKnownVersion
+        (event) => event.version >= bobJoinEventVersion
       )
     ).toBe(true);
+    expect(
+      bobResumed.resumeDelta.some(
+        (event) =>
+          event.version < bobJoinEventVersion &&
+          event.actorId === "alice"
+      )
+    ).toBe(false);
+    expect(bobKnownVersion).toBeGreaterThanOrEqual(bobJoinEventVersion);
   });
 
   it("authorizes RTC signaling without mutating durable room state", () => {
