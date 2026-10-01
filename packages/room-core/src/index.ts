@@ -1,6 +1,8 @@
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
+  type AgentVoiceGrantReceipt,
+  type AgentVoiceRevocationReceipt,
   type Artifact,
   type AuthorityTransferReceipt,
   type Capability,
@@ -9,6 +11,7 @@ import {
   type Participant,
   type RequestedHumanRole,
   type RoomSnapshot,
+  type VoiceAuthorityBootstrapReceipt,
   type WorkItem
 } from "@commonline/protocol";
 
@@ -76,6 +79,9 @@ export function createRoom(input: {
     ],
     grantRevocations: [],
     authorityTransfers: [],
+    voiceAuthorityBootstraps: [],
+    agentVoiceGrants: [],
+    agentVoiceRevocations: [],
     workItems: [],
     artifacts: [],
     acceptances: []
@@ -540,6 +546,341 @@ export function transferAcceptAuthority(
       grants: [...room.grants, issuedGrant],
       grantRevocations: [...room.grantRevocations, revocation],
       authorityTransfers: [...room.authorityTransfers, receipt]
+    }
+  };
+}
+
+
+export function activeAgentVoiceGrant(
+  room: RoomState,
+  agentParticipantId: string
+) {
+  const now = Date.now();
+  return room.agentVoiceGrants.find((receipt) => {
+    if (receipt.agentParticipantId !== agentParticipantId) return false;
+    if (
+      room.agentVoiceRevocations.some(
+        (revocation) => revocation.voiceGrantId === receipt.voiceGrantId
+      )
+    ) {
+      return false;
+    }
+    return !receipt.expiresAt || Date.parse(receipt.expiresAt) > now;
+  });
+}
+
+export type BootstrapAgentVoiceAuthorityResult =
+  | {
+      ok: true;
+      room: RoomState;
+      receipt: VoiceAuthorityBootstrapReceipt;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "GRANT_NOT_FOUND"
+        | "VOICE_AUTHORITY_ALREADY_BOOTSTRAPPED";
+      message: string;
+      canonicalBootstrap?: VoiceAuthorityBootstrapReceipt;
+    };
+
+export function bootstrapAgentVoiceAuthority(
+  room: RoomState,
+  input: {
+    bootstrapId: string;
+    actorParticipantId: string;
+    acceptAuthorityGrantId: string;
+  }
+): BootstrapAgentVoiceAuthorityResult {
+  const prior = room.voiceAuthorityBootstraps.find(
+    (receipt) => receipt.bootstrapId === input.bootstrapId
+  );
+  if (prior) {
+    return {
+      ok: true,
+      room,
+      receipt: prior,
+      replayed: true
+    };
+  }
+
+  const canonical = room.voiceAuthorityBootstraps[0];
+  if (canonical) {
+    return {
+      ok: false,
+      code: "VOICE_AUTHORITY_ALREADY_BOOTSTRAPPED",
+      message:
+        "Agent voice management authority has already been bootstrapped for this room.",
+      canonicalBootstrap: canonical
+    };
+  }
+
+  const acceptGrant = room.grants.find(
+    (receipt) =>
+      receipt.grantId === input.acceptAuthorityGrantId &&
+      receipt.subjectParticipantId === input.actorParticipantId &&
+      receipt.capability === "ACCEPT_OUTCOME" &&
+      !grantIsRevoked(room, receipt.grantId) &&
+      (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+  );
+
+  if (!acceptGrant) {
+    return {
+      ok: false,
+      code: "GRANT_NOT_FOUND",
+      message:
+        "Bootstrapping agent voice authority requires the actor's exact active ACCEPT_OUTCOME grant."
+    };
+  }
+
+  const managementGrant = grant({
+    roomId: room.roomId,
+    subjectParticipantId: input.actorParticipantId,
+    capability: "MANAGE_AGENT_VOICE",
+    issuerId: SYSTEM_ISSUER_ID
+  });
+
+  const committedVersion = room.version + 1;
+  const receipt: VoiceAuthorityBootstrapReceipt = {
+    bootstrapReceiptId: id("voice-authority-bootstrap"),
+    bootstrapId: input.bootstrapId,
+    roomId: room.roomId,
+    actorParticipantId: input.actorParticipantId,
+    acceptAuthorityGrantId: acceptGrant.grantId,
+    issuedGrantId: managementGrant.grantId,
+    committedVersion,
+    bootstrappedAt: new Date().toISOString()
+  };
+
+  return {
+    ok: true,
+    replayed: false,
+    receipt,
+    room: {
+      ...room,
+      version: committedVersion,
+      grants: [...room.grants, managementGrant],
+      voiceAuthorityBootstraps: [
+        ...room.voiceAuthorityBootstraps,
+        receipt
+      ]
+    }
+  };
+}
+
+export type GrantAgentVoiceResult =
+  | {
+      ok: true;
+      room: RoomState;
+      receipt: AgentVoiceGrantReceipt;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "GRANT_NOT_FOUND"
+        | "VOICE_TARGET_INVALID"
+        | "VOICE_GRANT_ALREADY_ACTIVE";
+      message: string;
+      canonicalGrant?: AgentVoiceGrantReceipt;
+    };
+
+export function grantAgentVoice(
+  room: RoomState,
+  input: {
+    grantRequestId: string;
+    actorParticipantId: string;
+    agentParticipantId: string;
+    voiceId: string;
+    authorityGrantId: string;
+    expiresAt?: string;
+  }
+): GrantAgentVoiceResult {
+  const prior = room.agentVoiceGrants.find(
+    (receipt) => receipt.grantRequestId === input.grantRequestId
+  );
+  if (prior) {
+    return {
+      ok: true,
+      room,
+      receipt: prior,
+      replayed: true
+    };
+  }
+
+  const target = room.participants.find(
+    (participant) =>
+      participant.id === input.agentParticipantId &&
+      participant.kind === "agent"
+  );
+  if (!target) {
+    return {
+      ok: false,
+      code: "VOICE_TARGET_INVALID",
+      message: "Agent voice can only be granted to an agent participant."
+    };
+  }
+
+  const authorityGrant = room.grants.find(
+    (receipt) =>
+      receipt.grantId === input.authorityGrantId &&
+      receipt.subjectParticipantId === input.actorParticipantId &&
+      receipt.capability === "MANAGE_AGENT_VOICE" &&
+      !grantIsRevoked(room, receipt.grantId) &&
+      (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+  );
+
+  if (!authorityGrant) {
+    return {
+      ok: false,
+      code: "GRANT_NOT_FOUND",
+      message:
+        "Granting agent voice requires the actor's exact active MANAGE_AGENT_VOICE grant."
+    };
+  }
+
+  const active = activeAgentVoiceGrant(room, target.id);
+  if (active) {
+    return {
+      ok: false,
+      code: "VOICE_GRANT_ALREADY_ACTIVE",
+      message:
+        "The target agent already has an active voice grant. Revoke it before issuing another.",
+      canonicalGrant: active
+    };
+  }
+
+  const committedVersion = room.version + 1;
+  const receipt: AgentVoiceGrantReceipt = {
+    voiceGrantId: id("agent-voice-grant"),
+    grantRequestId: input.grantRequestId,
+    roomId: room.roomId,
+    agentParticipantId: target.id,
+    voiceId: input.voiceId,
+    audienceMode: "explicit-subscription",
+    issuedByParticipantId: input.actorParticipantId,
+    authorityGrantId: authorityGrant.grantId,
+    issuedAt: new Date().toISOString(),
+    expiresAt: input.expiresAt,
+    committedVersion
+  };
+
+  return {
+    ok: true,
+    replayed: false,
+    receipt,
+    room: {
+      ...room,
+      version: committedVersion,
+      agentVoiceGrants: [...room.agentVoiceGrants, receipt]
+    }
+  };
+}
+
+export type RevokeAgentVoiceResult =
+  | {
+      ok: true;
+      room: RoomState;
+      receipt: AgentVoiceRevocationReceipt;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "GRANT_NOT_FOUND"
+        | "VOICE_GRANT_NOT_FOUND"
+        | "VOICE_GRANT_ALREADY_REVOKED";
+      message: string;
+      canonicalRevocation?: AgentVoiceRevocationReceipt;
+    };
+
+export function revokeAgentVoice(
+  room: RoomState,
+  input: {
+    revokeRequestId: string;
+    actorParticipantId: string;
+    voiceGrantId: string;
+    authorityGrantId: string;
+  }
+): RevokeAgentVoiceResult {
+  const prior = room.agentVoiceRevocations.find(
+    (receipt) => receipt.revokeRequestId === input.revokeRequestId
+  );
+  if (prior) {
+    return {
+      ok: true,
+      room,
+      receipt: prior,
+      replayed: true
+    };
+  }
+
+  const voiceGrant = room.agentVoiceGrants.find(
+    (receipt) => receipt.voiceGrantId === input.voiceGrantId
+  );
+  if (!voiceGrant) {
+    return {
+      ok: false,
+      code: "VOICE_GRANT_NOT_FOUND",
+      message: "The requested agent voice grant does not exist."
+    };
+  }
+
+  const canonical = room.agentVoiceRevocations.find(
+    (receipt) => receipt.voiceGrantId === input.voiceGrantId
+  );
+  if (canonical) {
+    return {
+      ok: false,
+      code: "VOICE_GRANT_ALREADY_REVOKED",
+      message: "That agent voice grant has already been revoked.",
+      canonicalRevocation: canonical
+    };
+  }
+
+  const authorityGrant = room.grants.find(
+    (receipt) =>
+      receipt.grantId === input.authorityGrantId &&
+      receipt.subjectParticipantId === input.actorParticipantId &&
+      receipt.capability === "MANAGE_AGENT_VOICE" &&
+      !grantIsRevoked(room, receipt.grantId) &&
+      (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+  );
+
+  if (!authorityGrant) {
+    return {
+      ok: false,
+      code: "GRANT_NOT_FOUND",
+      message:
+        "Revoking agent voice requires the actor's exact active MANAGE_AGENT_VOICE grant."
+    };
+  }
+
+  const committedVersion = room.version + 1;
+  const receipt: AgentVoiceRevocationReceipt = {
+    voiceRevocationId: id("agent-voice-revocation"),
+    revokeRequestId: input.revokeRequestId,
+    roomId: room.roomId,
+    voiceGrantId: voiceGrant.voiceGrantId,
+    revokedByParticipantId: input.actorParticipantId,
+    authorityGrantId: authorityGrant.grantId,
+    reason: "manual",
+    revokedAt: new Date().toISOString(),
+    committedVersion
+  };
+
+  return {
+    ok: true,
+    replayed: false,
+    receipt,
+    room: {
+      ...room,
+      version: committedVersion,
+      agentVoiceRevocations: [
+        ...room.agentVoiceRevocations,
+        receipt
+      ]
     }
   };
 }
