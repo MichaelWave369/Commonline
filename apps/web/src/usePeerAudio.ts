@@ -657,13 +657,13 @@ export function usePeerAudio({
       try {
         const stream = await microphone();
         const pc = buildPeer(session);
+        armSetupTimeout();
 
         stream.getTracks().forEach((track) => {
           pc.addTrack(track, stream);
         });
 
         await drainQueuedSignals();
-        armSetupTimeout();
       } catch (cause) {
         sendForSession(session, {
           kind: "hangup",
