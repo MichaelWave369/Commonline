@@ -134,7 +134,6 @@ export class AgentVoiceRuntime {
     roomId: string;
     actorParticipantId: string;
     agentParticipantId: string;
-    voiceGrantId: string;
     attentionLeaseId: string;
     turnRequestId: string;
     prompt: string;
@@ -171,7 +170,7 @@ export class AgentVoiceRuntime {
       room,
       input.agentParticipantId
     );
-    if (!active || active.voiceGrantId !== input.voiceGrantId) {
+    if (!active) {
       throw new Error("VOICE_GRANT_NOT_FOUND");
     }
 
@@ -236,7 +235,7 @@ export class AgentVoiceRuntime {
         : undefined;
       if (
         !stillActive ||
-        stillActive.voiceGrantId !== input.voiceGrantId
+        stillActive.voiceGrantId !== active.voiceGrantId
       ) {
         throw new Error("VOICE_GRANT_NOT_FOUND");
       }
