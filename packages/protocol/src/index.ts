@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-d.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-f.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type PrincipalKind = "human" | "agent" | "service" | "device";
@@ -67,7 +67,33 @@ export interface GrantReceipt {
   issuerId: string;
   issuedAt: string;
   expiresAt?: string;
+  /**
+   * Legacy P0-d compatibility field. P0-f records revocation as a separate
+   * immutable GrantRevocationReceipt instead of mutating this receipt.
+   */
   revokedAt?: string;
+}
+
+export interface GrantRevocationReceipt {
+  revocationId: string;
+  roomId: string;
+  grantId: string;
+  revokedByParticipantId: string;
+  reason: "authority-transfer" | "manual";
+  revokedAt: string;
+}
+
+export interface AuthorityTransferReceipt {
+  transferReceiptId: string;
+  transferId: string;
+  roomId: string;
+  fromParticipantId: string;
+  toParticipantId: string;
+  revokedGrantId: string;
+  revocationReceiptId: string;
+  issuedGrantId: string;
+  committedVersion: number;
+  transferredAt: string;
 }
 
 export interface AcceptanceReceipt {
@@ -90,6 +116,8 @@ export interface RoomSnapshot {
   episodeActive: boolean;
   participants: Participant[];
   grants: GrantReceipt[];
+  grantRevocations: GrantRevocationReceipt[];
+  authorityTransfers: AuthorityTransferReceipt[];
   workItems: WorkItem[];
   artifacts: Artifact[];
   acceptances: AcceptanceReceipt[];
@@ -100,7 +128,8 @@ export type RoomEventType =
   | "participant_left"
   | "work_submitted"
   | "artifact_proposed"
-  | "artifact_accepted";
+  | "artifact_accepted"
+  | "accept_authority_transferred";
 
 export interface RoomEvent {
   id: string;
@@ -119,6 +148,43 @@ export type AgentWorkState =
   | "blocked"
   | "completed"
   | "failed";
+
+export interface IdentityPublicKey {
+  kty: "EC";
+  crv: "P-256";
+  x: string;
+  y: string;
+  ext?: boolean;
+  key_ops?: string[];
+}
+
+export type IdentityChallengePurpose = "enroll" | "authenticate";
+
+export interface IdentityBeginMessage {
+  type: "identity_begin";
+  requestId: string;
+  schemaVersion: CommonlineWireSchemaVersion;
+  participantId: string;
+  sessionId: string;
+  publicKey?: IdentityPublicKey;
+}
+
+export interface IdentityProveMessage {
+  type: "identity_prove";
+  requestId: string;
+  challengeId: string;
+  signature: string;
+}
+
+export interface IdentityRecoverMessage {
+  type: "identity_recover";
+  requestId: string;
+  schemaVersion: CommonlineWireSchemaVersion;
+  participantId: string;
+  sessionId: string;
+  recoveryCode: string;
+  newPublicKey: IdentityPublicKey;
+}
 
 export interface JoinRoomMessage {
   type: "join_room";
@@ -151,6 +217,16 @@ export interface AcceptOutcomeMessage {
   authorityGrantId: string;
 }
 
+export interface TransferAcceptAuthorityMessage {
+  type: "transfer_accept_authority";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  transferId: string;
+  targetParticipantId: string;
+  authorityGrantId: string;
+}
+
 export type RtcSignalPayload =
   | {
       kind: "offer" | "answer";
@@ -177,10 +253,39 @@ export interface RtcSignalClientMessage {
 }
 
 export type ClientMessage =
+  | IdentityBeginMessage
+  | IdentityProveMessage
+  | IdentityRecoverMessage
   | JoinRoomMessage
   | SubmitWorkMessage
   | AcceptOutcomeMessage
+  | TransferAcceptAuthorityMessage
   | RtcSignalClientMessage;
+
+export interface IdentityChallengeMessage {
+  type: "identity_challenge";
+  requestId: string;
+  challengeId: string;
+  participantId: string;
+  sessionId: string;
+  nonce: string;
+  purpose: IdentityChallengePurpose;
+  expiresAt: string;
+}
+
+export interface IdentityAuthenticatedMessage {
+  type: "identity_authenticated";
+  requestId: string;
+  participantId: string;
+  sessionId: string;
+  enrolled: boolean;
+  recovered: boolean;
+  /**
+   * Returned only on initial enrollment or recovery rotation. The server
+   * stores only a hash and cannot show this code again later.
+   */
+  recoveryCode?: string;
+}
 
 export interface RoomSnapshotMessage {
   type: "room_snapshot";
@@ -200,6 +305,14 @@ export interface AcceptanceReceiptMessage {
   requestId: string;
   room: RoomSnapshot;
   receipt: AcceptanceReceipt;
+  replayed: boolean;
+}
+
+export interface AuthorityTransferReceiptMessage {
+  type: "authority_transfer_receipt";
+  requestId: string;
+  room: RoomSnapshot;
+  receipt: AuthorityTransferReceipt;
   replayed: boolean;
 }
 
@@ -230,7 +343,14 @@ export type RejectionCode =
   | "GRANT_NOT_FOUND"
   | "OUTCOME_ALREADY_ACCEPTED"
   | "PEER_UNAVAILABLE"
-  | "SCHEMA_VERSION_MISMATCH";
+  | "SCHEMA_VERSION_MISMATCH"
+  | "IDENTITY_REQUIRED"
+  | "IDENTITY_NOT_FOUND"
+  | "IDENTITY_CHALLENGE_INVALID"
+  | "IDENTITY_PROOF_INVALID"
+  | "IDENTITY_RECOVERY_INVALID"
+  | "TRANSFER_TARGET_INVALID"
+  | "TRANSFER_ALREADY_APPLIED";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -240,12 +360,16 @@ export interface IntentRejectedMessage {
   expectedVersion?: number;
   room?: RoomSnapshot;
   canonicalAcceptance?: AcceptanceReceipt;
+  canonicalTransfer?: AuthorityTransferReceipt;
 }
 
 export type ServerMessage =
+  | IdentityChallengeMessage
+  | IdentityAuthenticatedMessage
   | RoomSnapshotMessage
   | RoomEventMessage
   | AcceptanceReceiptMessage
+  | AuthorityTransferReceiptMessage
   | AgentWorkStatusMessage
   | RtcSignalRelayMessage
   | IntentRejectedMessage;
