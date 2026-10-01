@@ -5,6 +5,15 @@ import {
   type AcceptOutcomeMessage,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
+  type GroupMediaJoinMessage,
+  type GroupMediaLeaveMessage,
+  type GroupMediaPublishMicrophoneMessage,
+  type GroupMediaStateMessage,
+  type GroupMediaSubscribeMessage,
+  type GroupMediaUnpublishMessage,
+  type GroupMediaUnsubscribeMessage,
+  type GroupRtcSignalClientMessage,
+  type GroupRtcSignalRelayMessage,
   type IdentityBeginMessage,
   type IdentityChallengeMessage,
   type IdentityProveMessage,
@@ -109,6 +118,9 @@ export function useCommonlineRoom() {
     useState<AuthorityTransferReceipt | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
+  const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
+  const [groupMediaState, setGroupMediaState] =
+    useState<GroupMediaStateMessage | null>(null);
   const [rtcConfig, setRtcConfig] = useState<RtcConfigMessage | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<
     Record<string, AgentWorkStatusMessage>
@@ -413,6 +425,16 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "group_media_state") {
+        setGroupMediaState(message);
+        return;
+      }
+
+      if (message.type === "group_rtc_signal") {
+        setGroupRtcInbox((current) => [...current, message]);
+        return;
+      }
+
       if (message.type === "rtc_signal") {
         setRtcInbox((current) => [...current, message]);
         return;
@@ -458,6 +480,8 @@ export function useCommonlineRoom() {
       }
       setRtcInbox([]);
       setRtcSessionInbox([]);
+      setGroupRtcInbox([]);
+      setGroupMediaState(null);
       setRtcConfig(null);
       clearRtcConfigTimer();
       setIdentityState("idle");
@@ -716,6 +740,122 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const sendGroupMessage = useCallback(
+    (message:
+      | GroupMediaJoinMessage
+      | GroupMediaLeaveMessage
+      | GroupMediaPublishMicrophoneMessage
+      | GroupMediaUnpublishMessage
+      | GroupMediaSubscribeMessage
+      | GroupMediaUnsubscribeMessage
+      | GroupRtcSignalClientMessage) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const joinGroupMedia = useCallback(() => {
+    if (!room) return false;
+    return sendGroupMessage({
+      type: "group_media_join",
+      requestId: crypto.randomUUID(),
+      roomId: room.roomId
+    });
+  }, [room, sendGroupMessage]);
+
+  const leaveGroupMedia = useCallback(() => {
+    if (!room) return false;
+    const sent = sendGroupMessage({
+      type: "group_media_leave",
+      requestId: crypto.randomUUID(),
+      roomId: room.roomId
+    });
+    if (sent) {
+      setGroupMediaState(null);
+      setGroupRtcInbox([]);
+    }
+    return sent;
+  }, [room, sendGroupMessage]);
+
+  const publishGroupMicrophone = useCallback(() => {
+    if (!room) return false;
+    return sendGroupMessage({
+      type: "group_media_publish_microphone",
+      requestId: crypto.randomUUID(),
+      roomId: room.roomId
+    });
+  }, [room, sendGroupMessage]);
+
+  const unpublishGroupSource = useCallback(
+    (sourceId: string) => {
+      if (!room) return false;
+      return sendGroupMessage({
+        type: "group_media_unpublish",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        sourceId
+      });
+    },
+    [room, sendGroupMessage]
+  );
+
+  const subscribeGroupSource = useCallback(
+    (sourceId: string) => {
+      if (!room) return false;
+      return sendGroupMessage({
+        type: "group_media_subscribe",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        sourceId
+      });
+    },
+    [room, sendGroupMessage]
+  );
+
+  const unsubscribeGroupSource = useCallback(
+    (sourceId: string) => {
+      if (!room) return false;
+      return sendGroupMessage({
+        type: "group_media_unsubscribe",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        sourceId
+      });
+    },
+    [room, sendGroupMessage]
+  );
+
+  const sendGroupRtcSignal = useCallback(
+    (
+      targetParticipantId: string,
+      mediaSessionId: string,
+      generation: number,
+      signal: RtcSignalPayload
+    ) => {
+      if (!room) return false;
+      return sendGroupMessage({
+        type: "group_rtc_signal",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        mediaSessionId,
+        generation,
+        targetParticipantId,
+        signal
+      });
+    },
+    [room, sendGroupMessage]
+  );
+
+  const consumeGroupRtcSignal = useCallback((requestId: string) => {
+    setGroupRtcInbox((current) =>
+      current.filter((message) => message.requestId !== requestId)
+    );
+  }, []);
+
   const consumeRtcSession = useCallback((requestId: string) => {
     setRtcSessionInbox((current) =>
       current.filter((message) => message.requestId !== requestId)
@@ -758,6 +898,8 @@ export function useCommonlineRoom() {
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
+    groupRtcInbox,
+    groupMediaState,
     rtcConfig,
     notice,
     connect,
@@ -767,6 +909,14 @@ export function useCommonlineRoom() {
     transferAcceptAuthority,
     openRtcCall,
     sendRtcSignal,
+    joinGroupMedia,
+    leaveGroupMedia,
+    publishGroupMicrophone,
+    unpublishGroupSource,
+    subscribeGroupSource,
+    unsubscribeGroupSource,
+    sendGroupRtcSignal,
+    consumeGroupRtcSignal,
     consumeRtcSession,
     consumeRtcSignal
   };

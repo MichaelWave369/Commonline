@@ -256,3 +256,42 @@ The registry coalesces simultaneous call opens for the same pair, prevents a par
 Each side receives a deterministic polite/impolite role. SDP glare is resolved in the browser using the standard perfect-negotiation pattern while every signal remains bound to the server-issued call id and generation.
 
 This allows negotiation state to be disposable while room identity, authority, work, and accepted outcomes remain durable.
+
+
+## P0-i multiparty media control boundary
+
+P0-i introduces an ephemeral group-media control plane:
+
+```text
+Room human participants
+        ↓
+GroupMediaSession
+        ↓
+identified microphone sources
+        ↓
+directed subscriptions
+        ↓
+mesh-p0 pair transports
+```
+
+The current executable adapter is a three-human WebRTC mesh. This proves the source/subscription semantics without introducing an SFU runtime dependency.
+
+The server remains authoritative for group membership, publish permission, subscription permission, session generation, and whether a participant pair may exchange signaling.
+
+### SFU seam
+
+The intended future SFU consumes Commonline's existing control objects rather than replacing them:
+
+- authenticated participant id
+- group media session id + generation
+- source id + owner
+- subscriber id + source id
+- room-scoped SPEAK / RECEIVE_MEDIA grants
+
+An SFU may route packets. It does not become a Commonline participant or authority source.
+
+### Mesh limitation
+
+Because P0-i media packets remain peer-to-peer SRTP, the server cannot enforce source-level packet routing against a malicious client after signaling has been authorized.
+
+The supported client obeys the routing plan. P0-j must move enforcement into an SFU if the client is not trusted.

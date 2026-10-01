@@ -247,3 +247,61 @@ A simultaneous offer collision is resolved by perfect negotiation rather than by
 One participant may occupy at most one active P0-h media session. Simultaneous opens for the same pair coalesce; attempts to open a different call while busy are rejected.
 
 Hangup ends exactly one call generation. Later signaling for that generation is stale.
+
+
+## P0-i multiparty media profile
+
+Wire schema: `p0-i.1`.
+
+### Ephemeral group control
+
+Client intents:
+
+```text
+group_media_join
+group_media_leave
+group_media_publish_microphone
+group_media_unpublish
+group_media_subscribe
+group_media_unsubscribe
+```
+
+Server broadcasts:
+
+```text
+group_media_state
+  mediaSessionId
+  generation
+  routerMode
+  participants[]
+  sources[]
+  subscriptions[]
+```
+
+The P0-i router mode is `mesh-p0`.
+
+### Source authority
+
+Publishing a microphone requires the publisher's active `SPEAK` grant.
+
+Subscribing to a source requires the subscriber's active `RECEIVE_MEDIA` grant.
+
+Joining does not imply either action.
+
+### Group signaling
+
+`group_rtc_signal` binds:
+
+- room id
+- media session id
+- generation
+- target participant id
+- SDP / ICE payload
+
+The server relays group signaling only when the participants belong to the active group session and at least one directed subscription requires a transport between that pair.
+
+These messages are ephemeral and never increment room version.
+
+### SFU compatibility
+
+The source/subscription objects are intended to survive a future transport swap from `mesh-p0` to an SFU adapter. No SFU is permitted to infer durable room authority merely from media routing state.

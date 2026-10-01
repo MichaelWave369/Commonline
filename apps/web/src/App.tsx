@@ -2,7 +2,35 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Capability } from "@commonline/protocol";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
+import { useGroupAudio } from "./useGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
+
+function GroupRemoteAudio({
+  stream,
+  label
+}: {
+  stream: MediaStream;
+  label: string;
+}) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.srcObject = stream;
+    void ref.current.play().catch(() => {
+      // Browser autoplay policy may require a participant gesture.
+    });
+  }, [stream]);
+
+  return (
+    <div className="delta">
+      <strong>{label}</strong>
+      <audio ref={ref} autoPlay playsInline controls className="remote-audio">
+        Remote group audio playback is not supported by this browser.
+      </audio>
+    </div>
+  );
+}
 
 export function App() {
   const roomSession = useCommonlineRoom();
@@ -26,6 +54,8 @@ export function App() {
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
+    groupRtcInbox,
+    groupMediaState,
     rtcConfig,
     notice,
     connect,
@@ -35,6 +65,14 @@ export function App() {
     transferAcceptAuthority,
     openRtcCall,
     sendRtcSignal,
+    joinGroupMedia,
+    leaveGroupMedia,
+    publishGroupMicrophone,
+    unpublishGroupSource,
+    subscribeGroupSource,
+    unsubscribeGroupSource,
+    sendGroupRtcSignal,
+    consumeGroupRtcSignal,
     consumeRtcSession,
     consumeRtcSignal
   } = roomSession;
@@ -48,6 +86,22 @@ export function App() {
     consumeRtcSignal,
     openRtcCall,
     sendRtcSignal
+  });
+
+  const group = useGroupAudio({
+    participantId,
+    roomConnected: connection === "connected",
+    rtcConfig,
+    groupState: groupMediaState,
+    signalInbox: groupRtcInbox,
+    consumeSignal: consumeGroupRtcSignal,
+    joinGroup: joinGroupMedia,
+    leaveGroup: leaveGroupMedia,
+    publishMicrophone: publishGroupMicrophone,
+    unpublishSource: unpublishGroupSource,
+    subscribeSource: subscribeGroupSource,
+    unsubscribeSource: unsubscribeGroupSource,
+    sendSignal: sendGroupRtcSignal
   });
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -151,6 +205,7 @@ export function App() {
 
   function leaveEpisode() {
     if (audio.state !== "idle") audio.hangup();
+    if (group.joined) group.leave();
     disconnect();
   }
 
@@ -158,8 +213,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-h MEDIA SESSION + PERFECT NEGOTIATION</div>
-          <h1>{room?.purpose ?? "Make each call an exact ephemeral object"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-i MULTIPARTY MEDIA BOUNDARY</div>
+          <h1>{room?.purpose ?? "Route identified human audio sources without collapsing authority"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -168,6 +223,9 @@ export function App() {
           <Badge>ROUTE {audio.diagnostics.metrics.route.toUpperCase()}</Badge>
           {audio.callSession && (
             <Badge>CALL g{audio.callSession.generation}</Badge>
+          )}
+          {group.joined && (
+            <Badge>GROUP {group.routerMode?.toUpperCase() ?? "MEDIA"}</Badge>
           )}
           {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
@@ -379,7 +437,8 @@ export function App() {
                       disabled={
                         !canSpeak ||
                         !canReceiveMedia ||
-                        !audio.rtcReady
+                        !audio.rtcReady ||
+                        group.joined
                       }
                     >
                       Call
@@ -451,6 +510,148 @@ export function App() {
           )}
         </Card>
       </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Three-human group media proof</SectionTitle>
+          {!group.joined ? (
+            <>
+              <p className="muted">
+                P0-i admits up to three human participants to one ephemeral media
+                session. The executable adapter is mesh-p0 behind the same
+                source/subscription boundary a future SFU can implement.
+              </p>
+              <Button
+                onClick={group.join}
+                disabled={
+                  connection !== "connected" ||
+                  audio.state !== "idle" ||
+                  (!canSpeak && !canReceiveMedia)
+                }
+              >
+                Join group media
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="grant-grid">
+                <Badge>
+                  PARTICIPANTS {groupMediaState?.participants.length ?? 0}/
+                  {groupMediaState?.maxParticipants ?? 3}
+                </Badge>
+                <Badge>
+                  ROUTER {group.routerMode?.toUpperCase() ?? "UNKNOWN"}
+                </Badge>
+                <Badge>
+                  MIC {group.ownSource ? (group.muted ? "MUTED" : "PUBLISHED") : "OFF"}
+                </Badge>
+                <Badge>PEER LINKS {group.plans.length}</Badge>
+              </div>
+
+              <div className="button-row">
+                {!group.ownSource ? (
+                  <Button
+                    onClick={() => void group.enableMicrophone()}
+                    disabled={!canSpeak || !audio.rtcReady}
+                  >
+                    Publish microphone
+                  </Button>
+                ) : (
+                  <>
+                    <Button onClick={group.toggleMute}>
+                      {group.muted ? "Unmute mic" : "Mute mic"}
+                    </Button>
+                    <Button onClick={group.disableMicrophone}>
+                      Stop publishing mic
+                    </Button>
+                  </>
+                )}
+                <Button onClick={group.leave}>Leave group media</Button>
+              </div>
+
+              {group.error && <p className="notice">{group.error}</p>}
+              <p className="muted small">
+                Joining does not publish a microphone and does not subscribe you
+                to anyone. Those remain separate explicit actions.
+              </p>
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Identified sources + subscriptions</SectionTitle>
+          {!group.joined || !groupMediaState ? (
+            <p className="muted">Join group media to see ephemeral sources.</p>
+          ) : groupMediaState.sources.length === 0 ? (
+            <p className="muted">No microphone sources are published yet.</p>
+          ) : (
+            <div className="participant-list">
+              {groupMediaState.sources.map((source) => {
+                const owner = room?.participants.find(
+                  (participant) => participant.id === source.ownerParticipantId
+                );
+                const mine = source.ownerParticipantId === participantId;
+                const subscribed = groupMediaState.subscriptions.some(
+                  (subscription) =>
+                    subscription.subscriberParticipantId === participantId &&
+                    subscription.sourceId === source.sourceId
+                );
+
+                return (
+                  <div className="call-peer" key={source.sourceId}>
+                    <div>
+                      <strong>
+                        {owner?.name ?? source.ownerParticipantId}
+                        {mine ? " (your mic)" : ""}
+                      </strong>
+                      <div className="muted small">
+                        {source.kind} · {source.sourceId}
+                      </div>
+                    </div>
+                    {!mine && (
+                      <Button
+                        onClick={() =>
+                          subscribed
+                            ? group.unsubscribeSource(source.sourceId)
+                            : group.subscribeSource(source.sourceId)
+                        }
+                        disabled={!canReceiveMedia}
+                      >
+                        {subscribed ? "Unsubscribe" : "Subscribe"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      {group.joined && Object.keys(group.remoteStreams).length > 0 && (
+        <section className="hero-grid">
+          {Object.entries(group.remoteStreams).map(([peerId, stream]) => {
+            const participant = room?.participants.find(
+              (candidate) => candidate.id === peerId
+            );
+            return (
+              <Card key={peerId}>
+                <SectionTitle>
+                  Group audio · {participant?.name ?? peerId}
+                </SectionTitle>
+                <GroupRemoteAudio
+                  stream={stream}
+                  label={
+                    group.peerStates[peerId]
+                      ? `peer ${group.peerStates[peerId]}`
+                      : "peer negotiating"
+                  }
+                />
+              </Card>
+            );
+          })}
+        </section>
+      )}
 
       <section className="hero-grid">
         <Card>
@@ -672,9 +873,9 @@ export function App() {
       </section>
 
       <footer>
-        P0-h makes each one-to-one call an exact ephemeral media session with a call ID,
-        generation, deterministic polite/impolite roles, perfect-negotiation glare handling,
-        and stale-signal rejection. Media sessions remain outside durable room history.
+        P0-i proves a three-human source/subscription model with an executable mesh-p0
+        adapter behind an SFU-shaped boundary. Group media stays ephemeral, agents still
+        receive no live audio, and durable undertaking state remains independent.
       </footer>
     </main>
   );
