@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   mkdtemp,
   readFile,
@@ -51,6 +52,15 @@ export function voiceRendererConfigFromEnv(
     );
   }
 
+  const timeoutMs = Number(
+    env.COMMONLINE_PIPER_TIMEOUT_MS?.trim() || "30000"
+  );
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) {
+    throw new Error(
+      "COMMONLINE_PIPER_TIMEOUT_MS must be a number of at least 1000."
+    );
+  }
+
   return {
     engine,
     piper: {
@@ -59,9 +69,7 @@ export function voiceRendererConfigFromEnv(
       voiceId: "vessie-local-v1",
       speaker: env.COMMONLINE_PIPER_SPEAKER?.trim() || undefined,
       cuda: env.COMMONLINE_PIPER_CUDA === "true",
-      timeoutMs: Number(
-        env.COMMONLINE_PIPER_TIMEOUT_MS?.trim() || "30000"
-      )
+      timeoutMs
     } satisfies PiperVoiceRendererConfig
   };
 }
@@ -140,14 +148,18 @@ export class PiperCliVoiceRenderer implements LocalVoiceRenderer {
   constructor(private readonly config: PiperVoiceRendererConfig) {}
 
   status(): VoiceRendererStatus {
+    const ready =
+      Boolean(this.config.model) && existsSync(this.config.model);
     return {
       engine: "piper",
-      ready: Boolean(this.config.model),
+      ready,
       local: true,
       voiceId: this.config.voiceId,
-      detail: this.config.model
+      detail: ready
         ? `Piper CLI model: ${this.config.model}`
-        : "COMMONLINE_PIPER_MODEL is not configured."
+        : this.config.model
+          ? `Piper model not found locally: ${this.config.model}`
+          : "COMMONLINE_PIPER_MODEL is not configured."
     };
   }
 
@@ -158,7 +170,7 @@ export class PiperCliVoiceRenderer implements LocalVoiceRenderer {
     if (input.voiceId !== this.config.voiceId) {
       throw new Error("VOICE_ID_INVALID");
     }
-    if (!this.config.model) {
+    if (!this.status().ready) {
       throw new Error("VOICE_RENDERER_UNAVAILABLE");
     }
 
