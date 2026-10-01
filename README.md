@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-d freezes identity, authority, acceptance, reconnect, observer, and private-scratch wire semantics before any durable database is introduced.
+This repository is at the **P0 prototype** stage. P0-e adds local SQLite durability to the frozen P0-d wire while keeping scratch, sessions, signaling, status pulses, and audio intentionally ephemeral.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-d: participants are distinct from sessions, Vessie is a real governed participant, acceptance is idempotent and grant-receipt backed, observers are read-only, and private agent scratch stays off the durable event surface.
+The current executable rung is P0-e: governed room state, grants, work, proposals, acceptance receipts, and room events survive server restart through an atomic local SQLite store.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md) for the rung history and [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md) for the frozen P0-d schema, invariants, and works-today/does-not table.
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), and [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md).
 
 ## Working name
 

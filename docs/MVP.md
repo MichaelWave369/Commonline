@@ -235,14 +235,56 @@ P0-d has no supersede/retract transition yet.
 
 An accepted outcome is the room's current canonical outcome for that work item, not an assertion of permanent truth. Supersession is deliberately deferred one rung and must preserve prior receipts.
 
-## Next rung: P0-e
+## P0-e — local SQLite persistence
 
-Add local SQLite/file persistence for durable room state, events, grants, work items, proposals, and acceptance receipts **without** persisting:
+P0-e persists the durable side of the frozen `p0-d.1` wire without persisting the ephemeral side.
 
-- scratch
-- agent work status pulses
-- WebRTC signaling
-- audio frames
-- browser connection/session objects
+```text
+RoomService
+   ↓
+SQLite transaction
+   ├── room
+   ├── participants
+   ├── grants
+   ├── work items
+   ├── proposals
+   ├── acceptance receipts
+   └── room events
 
-P0-e should also include schema migration/version checks so `p0-d.1` is not silently reinterpreted later.
+Never stored:
+   scratch / status / sessions / signaling / audio
+```
+
+### Implemented in this rung
+
+- local SQLite database using Node's built-in SQLite API
+- storage schema marker `p0-e.1`
+- wire/storage compatibility checks
+- lazy room + event recovery from disk
+- human presence normalized offline after restart
+- atomic room-snapshot + event transitions
+- optimistic persisted-version check before every commit
+- durable idempotent acceptance receipts
+- canonical acceptance uniqueness in SQLite
+- WAL + full synchronous mode for file-backed databases
+- graceful SQLite close on process termination
+- restart-recovery proof
+- transaction rollback proof
+- scratch poison-string durability proof
+
+See [PERSISTENCE_P0E.md](PERSISTENCE_P0E.md).
+
+### Still deliberately absent
+
+- authenticated identity
+- grant-transfer UI
+- acceptance supersession / retraction
+- TURN relay
+- multi-party media
+- agent audio
+- external-effect execution
+- SIP / PSTN
+
+## Next rung
+
+After P0-e is proven, the next architecture decision should be between identity/authority hardening and real-internet media hardening. Neither requires weakening the persistence boundary.

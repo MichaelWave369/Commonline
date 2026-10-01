@@ -9,3 +9,8 @@ coverage/
 *.log
 .vscode/
 .idea/
+
+data/
+*.db
+*.db-wal
+*.db-shm
