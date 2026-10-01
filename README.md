@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-o adds ephemeral one-turn attention leases so an authorized agent voice may take a bounded conversational turn only after a live human explicitly grants that turn.
+This repository is at the **P0 prototype** stage. P0-p adds bounded push-to-share listening: a human may deliberately share one short microphone clip with Vessie through local STT without giving the agent ambient microphone access.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-o: Vessie can render a locally governed voice, but conversational floor access now requires a separate short-lived one-turn attention lease owned by the requesting human.
+The current executable rung is P0-p: listening is a separate one-use selected-context path, not an SFU subscription, and audio/transcript data remains ephemeral.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md).
 
 ## Working name
 
