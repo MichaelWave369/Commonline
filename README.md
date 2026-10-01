@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-k adds a governed media-source policy layer above the real mediasoup SFU, making human microphones and sound effects distinct executable source kinds while reserving music, agent voice, and system tones behind explicit future policy.
+This repository is at the **P0 prototype** stage. P0-l adds a repeatable three-browser acceptance harness that proves P0-k source subscriptions against real mediasoup Consumers and inbound RTP packet/byte evidence.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-k: authenticated humans can publish policy-bound microphone and sound-effect sources through mediasoup, while every source still requires explicit subscriber authority before it is received.
+The current executable rung is P0-l: the governed microphone and sound-effect paths are exercised across Alice/Bob/Charlie browser contexts, including negative no-Consumer assertions and live subscription changes.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md).
 
 ## Working name
 

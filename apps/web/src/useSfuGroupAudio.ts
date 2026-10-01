@@ -26,6 +26,16 @@ type RecvTransport = ReturnType<Device["createRecvTransport"]>;
 type ClientProducer = Awaited<ReturnType<SendTransport["produce"]>>;
 type ClientConsumer = Awaited<ReturnType<RecvTransport["consume"]>>;
 
+export interface SfuConsumerEvidence {
+  sourceId: string;
+  consumerId: string;
+  trackState: MediaStreamTrackState;
+  bytesReceived: number;
+  packetsReceived: number;
+  jitterSeconds?: number;
+  updatedAt: string;
+}
+
 interface UseSfuGroupAudioInput {
   participantId: string;
   roomConnected: boolean;
@@ -89,6 +99,9 @@ export function useSfuGroupAudio({
 
   const [remoteStreams, setRemoteStreams] = useState<
     Record<string, MediaStream>
+  >({});
+  const [consumerEvidence, setConsumerEvidence] = useState<
+    Record<string, SfuConsumerEvidence>
   >({});
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +169,13 @@ export function useSfuGroupAudio({
     }
 
     setRemoteStreams((current) => {
+      if (!current[sourceId]) return current;
+      const next = { ...current };
+      delete next[sourceId];
+      return next;
+    });
+
+    setConsumerEvidence((current) => {
       if (!current[sourceId]) return current;
       const next = { ...current };
       delete next[sourceId];
@@ -844,6 +864,74 @@ export function useSfuGroupAudio({
     joined
   ]);
 
+  const refreshConsumerEvidence = useCallback(async () => {
+    const next: Record<string, SfuConsumerEvidence> = {};
+
+    await Promise.all(
+      [...consumersRef.current.entries()].map(
+        async ([sourceId, consumer]) => {
+          let bytesReceived = 0;
+          let packetsReceived = 0;
+          let jitterSeconds: number | undefined;
+
+          try {
+            const report = await consumer.getStats();
+            report.forEach((stat) => {
+              const value = stat as unknown as Record<string, unknown>;
+              if (
+                value.type !== "inbound-rtp" ||
+                (value.kind !== undefined &&
+                  value.kind !== "audio" &&
+                  value.mediaType !== "audio")
+              ) {
+                return;
+              }
+
+              if (typeof value.bytesReceived === "number") {
+                bytesReceived += value.bytesReceived;
+              }
+              if (typeof value.packetsReceived === "number") {
+                packetsReceived += value.packetsReceived;
+              }
+              if (typeof value.jitter === "number") {
+                jitterSeconds = value.jitter;
+              }
+            });
+          } catch {
+            // Acceptance evidence must observe media without being able to
+            // disrupt the media path if browser stats are temporarily absent.
+          }
+
+          next[sourceId] = {
+            sourceId,
+            consumerId: consumer.id,
+            trackState: consumer.track.readyState,
+            bytesReceived,
+            packetsReceived,
+            jitterSeconds,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      )
+    );
+
+    setConsumerEvidence(next);
+  }, []);
+
+  useEffect(() => {
+    if (!joined) {
+      setConsumerEvidence({});
+      return;
+    }
+
+    void refreshConsumerEvidence();
+    const timer = window.setInterval(() => {
+      void refreshConsumerEvidence();
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [joined, refreshConsumerEvidence]);
+
   useEffect(() => {
     if (roomConnected) return;
     closeSfu(true);
@@ -1099,6 +1187,7 @@ export function useSfuGroupAudio({
     microphoneSource,
     soundEffectSource,
     remoteStreams,
+    consumerEvidence,
     muted,
     error,
     microphoneEnabled: Boolean(microphoneStreamRef.current),

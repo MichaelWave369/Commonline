@@ -523,3 +523,21 @@ mediasoup Consumer
 - P0-j -> P0-k storage/wire metadata migration
 
 See [MEDIA_SOURCE_POLICY_P0K.md](MEDIA_SOURCE_POLICY_P0K.md).
+
+
+## P0-l — live media acceptance harness
+
+P0-l is an acceptance rung rather than a wire/storage change. It keeps `p0-k.1` and proves the current source/subscription/SFU contract in three independent Chromium contexts.
+
+### Acceptance matrix
+
+- Alice publishes human-microphone + sound-effect
+- Bob subscribes microphone only
+- Charlie subscribes sound-effect only
+- subscribed paths must create Consumers with non-zero inbound RTP packets/bytes
+- unsubscribed paths must have no Consumer
+- subscriptions are then changed live and the exact Consumer set must follow
+
+The CI run retains a JSON evidence artifact plus Playwright failure traces/screenshots/video when applicable.
+
+See [MEDIA_ACCEPTANCE_P0L.md](MEDIA_ACCEPTANCE_P0L.md).

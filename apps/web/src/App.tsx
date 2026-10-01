@@ -208,8 +208,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-k GOVERNED MEDIA SOURCE POLICY</div>
-          <h1>{room?.purpose ?? "Govern what kind of audio source may exist before the SFU routes it"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-l LIVE MEDIA ACCEPTANCE</div>
+          <h1>{room?.purpose ?? "Prove governed subscriptions against live SFU packet evidence"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -257,7 +257,11 @@ export function App() {
           </select>
           <div className="button-row">
             {connection === "disconnected" ? (
-              <Button onClick={connect} disabled={!name.trim()}>
+              <Button
+                data-testid="authenticate-join"
+                onClick={connect}
+                disabled={!name.trim()}
+              >
                 Authenticate + join
               </Button>
             ) : (
@@ -508,15 +512,17 @@ export function App() {
 
       <section className="hero-grid">
         <Card>
-          <SectionTitle>Three-human group media proof</SectionTitle>
+          <SectionTitle>Three-human live acceptance surface</SectionTitle>
           {!group.joined ? (
             <>
               <p className="muted">
-                P0-k keeps the mediasoup SFU but adds a policy catalog above it.
-                Microphones and sound effects are executable source kinds; music,
-                agent voice, and system tones are visible but reserved for later rungs.
+                P0-l keeps the P0-k source policy and adds observable acceptance
+                evidence. Each live Consumer exposes source identity, track state,
+                packet count, and bytes received so selective routing can be tested
+                across independent browser contexts.
               </p>
               <Button
+                data-testid="join-group-media"
                 onClick={group.join}
                 disabled={
                   connection !== "connected" ||
@@ -552,6 +558,7 @@ export function App() {
               <div className="button-row">
                 {!group.microphoneSource ? (
                   <Button
+                    data-testid="publish-microphone"
                     onClick={() => void group.enableMicrophone()}
                     disabled={!canSpeak || !group.sfuReady}
                   >
@@ -570,6 +577,7 @@ export function App() {
 
                 {!group.soundEffectSource ? (
                   <Button
+                    data-testid="publish-sound-effects"
                     onClick={() => void group.enableSoundEffects()}
                     disabled={!canSpeak || !group.sfuReady}
                   >
@@ -578,6 +586,7 @@ export function App() {
                 ) : (
                   <>
                     <Button
+                      data-testid="trigger-sound-effect"
                       onClick={() => void group.triggerSoundEffect()}
                       disabled={!group.soundEffectReady}
                     >
@@ -622,7 +631,15 @@ export function App() {
                 );
 
                 return (
-                  <div className="call-peer" key={source.sourceId}>
+                  <div
+                    className="call-peer"
+                    key={source.sourceId}
+                    data-acceptance-source="true"
+                    data-source-id={source.sourceId}
+                    data-source-kind={source.kind}
+                    data-owner-id={source.ownerParticipantId}
+                    data-owner-name={owner?.name ?? source.ownerParticipantId}
+                  >
                     <div>
                       <strong>
                         {source.label}
@@ -638,6 +655,11 @@ export function App() {
                     </div>
                     {!mine && (
                       <Button
+                        data-acceptance-subscription="true"
+                        data-source-id={source.sourceId}
+                        data-source-kind={source.kind}
+                        data-owner-name={owner?.name ?? source.ownerParticipantId}
+                        data-subscription-state={subscribed ? "subscribed" : "unsubscribed"}
                         onClick={() =>
                           subscribed
                             ? group.unsubscribeSource(source.sourceId)
@@ -712,7 +734,16 @@ export function App() {
                 candidate.id === source?.ownerParticipantId
             );
             return (
-              <Card key={sourceId}>
+              <Card
+                key={sourceId}
+                data-acceptance-consumer="true"
+                data-source-id={sourceId}
+                data-source-kind={source?.kind ?? "unknown"}
+                data-owner-name={participant?.name ?? source?.ownerParticipantId ?? sourceId}
+                data-bytes-received={group.consumerEvidence[sourceId]?.bytesReceived ?? 0}
+                data-packets-received={group.consumerEvidence[sourceId]?.packetsReceived ?? 0}
+                data-track-state={group.consumerEvidence[sourceId]?.trackState ?? "pending"}
+              >
                 <SectionTitle>
                   SFU audio · {participant?.name ?? source?.ownerParticipantId ?? sourceId}
                 </SectionTitle>
@@ -720,6 +751,11 @@ export function App() {
                   stream={stream}
                   label={`governed source ${sourceId}`}
                 />
+                <div className="muted small" data-testid="consumer-evidence">
+                  packets {group.consumerEvidence[sourceId]?.packetsReceived ?? 0}
+                  {" · "}bytes {group.consumerEvidence[sourceId]?.bytesReceived ?? 0}
+                  {" · "}track {group.consumerEvidence[sourceId]?.trackState ?? "pending"}
+                </div>
               </Card>
             );
           })}
@@ -946,10 +982,9 @@ export function App() {
       </section>
 
       <footer>
-        P0-k adds an explicit media-source policy layer above the SFU. Human microphones
-        and sound effects are executable; shared music, agent voice, and system tones are
-        reserved. Every routed source still requires explicit publication and subscription,
-        and all live media state remains ephemeral.
+        P0-l adds a repeatable live-media acceptance harness above P0-k. Browser tests can
+        prove source-specific subscription matrices against real mediasoup Consumers and
+        packet counters while all acceptance evidence remains observational and ephemeral.
       </footer>
     </main>
   );
