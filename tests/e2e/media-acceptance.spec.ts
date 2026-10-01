@@ -123,7 +123,7 @@ async function evidence(locator: Locator) {
   };
 }
 
-test("P0-p proves live media attention plus bounded governed listening across three browsers", async ({
+test("P0-q proves heard context stays silent until separately authorized reply", async ({
   browser
 }, testInfo) => {
   const humans: HumanBrowser[] = [];
@@ -436,6 +436,10 @@ test("P0-p proves live media attention plus bounded governed listening across th
       charlieConsumerCount: await charlieVoiceConsumer.count()
     };
 
+    const beforeListeningPackets = Number(
+      (await bobVoiceConsumer.getAttribute("data-packets-received")) ?? "0"
+    );
+
     // P0-p: Vessie still has no ambient microphone route. Alice explicitly
     // arms one bounded share, captures a short fake-mic segment, and submits it
     // to local STT as ephemeral selected context.
@@ -525,6 +529,102 @@ test("P0-p proves live media attention plus bounded governed listening across th
           .getAttribute("data-listening-status")
     };
 
+    // P0-q: hearing alone does not create speech. The existing Vessie
+    // subscription must stay packet-stable until Alice separately grants a
+    // fresh attention turn and explicitly binds it to this heard exchange.
+    const exchange = alice.page.getByTestId("conversation-exchange");
+    await expect(exchange).toHaveAttribute("data-exchange-state", "heard");
+    const exchangeId =
+      (await exchange.getAttribute("data-exchange-id")) ?? "";
+    expect(exchangeId).not.toBe("");
+
+    await alice.page.waitForTimeout(350);
+    const afterListeningPackets = Number(
+      (await bobVoiceConsumer.getAttribute("data-packets-received")) ?? "0"
+    );
+    expect(afterListeningPackets).toBe(beforeListeningPackets);
+
+    await expect(
+      alice.page.getByTestId("authorize-exchange-response")
+    ).toHaveCount(0);
+    await alice.page.getByTestId("grant-exchange-attention").click();
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "active"
+    );
+    const exchangeAttentionLeaseId =
+      (await attentionState.getAttribute("data-attention-lease-id")) ?? "";
+    expect(exchangeAttentionLeaseId).not.toBe("");
+    expect(exchangeAttentionLeaseId).not.toBe(secondLeaseId);
+
+    await alice.page.getByTestId("authorize-exchange-response").click();
+
+    const exchangeStatus = alice.page.getByTestId(
+      "exchange-response-status"
+    );
+    await expect
+      .poll(
+        async () =>
+          (await exchangeStatus.getAttribute("data-response-state")) ?? "",
+        {
+          timeout: 20_000,
+          message:
+            "expected separately attention-authorized exchange reply to complete"
+        }
+      )
+      .toBe("completed");
+
+    await expect(exchangeStatus).toHaveAttribute(
+      "data-exchange-id",
+      exchangeId
+    );
+    await expect(exchangeStatus).toHaveAttribute(
+      "data-exchange-state",
+      "responded"
+    );
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "consumed"
+    );
+
+    await expect
+      .poll(
+        async () =>
+          Number(
+            (await bobVoiceConsumer.getAttribute(
+              "data-packets-received"
+            )) ?? "0"
+          ),
+        {
+          timeout: 20_000,
+          message:
+            "expected Vessie RTP only after heard exchange received separate attention authority"
+        }
+      )
+      .toBeGreaterThan(afterListeningPackets);
+    await expect(charlieVoiceConsumer).toHaveCount(0);
+
+    await expect(exchange).toHaveAttribute(
+      "data-exchange-state",
+      "responded"
+    );
+    await expect(
+      alice.page.getByTestId("authorize-exchange-response")
+    ).toHaveCount(0);
+
+    const exchangeEvidence = {
+      exchangeId,
+      exchangeState:
+        await exchange.getAttribute("data-exchange-state"),
+      attentionLeaseId: exchangeAttentionLeaseId,
+      attentionState:
+        await attentionState.getAttribute("data-attention-state"),
+      packetsBeforeListening: beforeListeningPackets,
+      packetsAfterListening: afterListeningPackets,
+      bobAfterReply: await evidence(bobVoiceConsumer),
+      charlieConsumerCount: await charlieVoiceConsumer.count()
+    };
+
     // Revocation must remove the source and downstream Consumer, not merely
     // hide a button while audio authority remains alive.
     await alice.page.getByTestId("revoke-vessie-voice").click();
@@ -532,7 +632,7 @@ test("P0-p proves live media attention plus bounded governed listening across th
     await expect(bobVoiceConsumer).toHaveCount(0);
 
     const report = {
-      schema: "p0-p.acceptance.1",
+      schema: "p0-q.acceptance.1",
       test: testInfo.title,
       generatedAt: new Date().toISOString(),
       matrix: {
@@ -553,6 +653,7 @@ test("P0-p proves live media attention plus bounded governed listening across th
         second: secondAttentionEvidence
       },
       listeningEvidence,
+      exchangeEvidence,
       agentVoiceRevoked: {
         sourceCount: await bobVoiceSource.count(),
         consumerCount: await bobVoiceConsumer.count()
@@ -561,7 +662,7 @@ test("P0-p proves live media attention plus bounded governed listening across th
 
     const reportPath = resolve(
       "test-results",
-      "p0p-media-acceptance.json"
+      "p0q-media-acceptance.json"
     );
     mkdirSync(dirname(reportPath), { recursive: true });
     writeFileSync(
@@ -570,7 +671,7 @@ test("P0-p proves live media attention plus bounded governed listening across th
       "utf8"
     );
 
-    await testInfo.attach("p0p-media-acceptance", {
+    await testInfo.attach("p0q-media-acceptance", {
       body: Buffer.from(JSON.stringify(report, null, 2)),
       contentType: "application/json"
     });
