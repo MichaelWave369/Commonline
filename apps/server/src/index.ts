@@ -94,6 +94,7 @@ const httpServer = createServer((request, response) => {
         attentionLeases: "ephemeral-one-turn-p0-o",
         governedListening: "bounded-push-share-p0-p",
         explicitExchangeBinding: "heard-plus-attention-p0-q",
+        externalEffectFirewall: "local-proof-sink-p0-u",
         speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })
