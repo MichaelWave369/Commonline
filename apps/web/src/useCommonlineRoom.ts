@@ -78,6 +78,7 @@ function acknowledgedVersion() {
 export function useCommonlineRoom() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const rtcConfigTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const wantsConnectionRef = useRef(false);
   const openSocketRef = useRef<() => void>(() => undefined);
@@ -132,6 +133,13 @@ export function useCommonlineRoom() {
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRtcConfigTimer = useCallback(() => {
+    if (rtcConfigTimerRef.current !== null) {
+      window.clearTimeout(rtcConfigTimerRef.current);
+      rtcConfigTimerRef.current = null;
     }
   }, []);
 
@@ -193,7 +201,7 @@ export function useCommonlineRoom() {
     reconnectTimerRef.current = window.setTimeout(() => {
       openSocketRef.current();
     }, delay);
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, clearRtcConfigTimer]);
 
   const openSocket = useCallback(() => {
     if (!wantsConnectionRef.current) return;
@@ -377,6 +385,23 @@ export function useCommonlineRoom() {
 
       if (message.type === "rtc_config") {
         setRtcConfig(message);
+        clearRtcConfigTimer();
+
+        if (message.expiresAt) {
+          const refreshIn = Math.max(
+            5_000,
+            Date.parse(message.expiresAt) - Date.now() - 60_000
+          );
+          rtcConfigTimerRef.current = window.setTimeout(() => {
+            if (socket.readyState !== WebSocket.OPEN) return;
+            const refresh: RtcConfigRequestMessage = {
+              type: "rtc_config_request",
+              requestId: crypto.randomUUID(),
+              roomId: message.roomId
+            };
+            socket.send(JSON.stringify(refresh));
+          }, refreshIn);
+        }
         return;
       }
 
@@ -425,6 +450,7 @@ export function useCommonlineRoom() {
       }
       setRtcInbox([]);
       setRtcConfig(null);
+      clearRtcConfigTimer();
       setIdentityState("idle");
 
       if (event.code === 4000) {
@@ -482,6 +508,7 @@ export function useCommonlineRoom() {
     wantsConnectionRef.current = false;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
+    clearRtcConfigTimer();
     socketRef.current?.close(1000, "participant left");
     socketRef.current = null;
     setConnection("disconnected");
