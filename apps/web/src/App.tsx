@@ -54,6 +54,7 @@ export function App() {
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
     lastAgentVoiceRevocation,
+    lastAgentVoiceUtteranceStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -68,6 +69,7 @@ export function App() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    requestAgentVoiceUtterance,
     openRtcCall,
     sendRtcSignal,
     joinGroupMedia,
@@ -164,6 +166,12 @@ export function App() {
       (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
   );
 
+  const activeVessieVoiceSource = groupMediaState?.sources.find(
+    (source) =>
+      source.ownerParticipantId === "agent-vessie" &&
+      source.kind === "agent-voice"
+  );
+
   const transferTargets =
     room?.participants.filter(
       (participant) =>
@@ -225,8 +233,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-m AGENT VOICE AUTHORITY</div>
-          <h1>{room?.purpose ?? "Separate permission to speak as an agent from the renderer that may someday do it"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-n LOCAL AGENT VOICE RENDERER</div>
+          <h1>{room?.purpose ?? "Render Vessie's granted voice locally and route it only to explicit subscribers"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -433,6 +441,7 @@ export function App() {
                 MANAGE_AGENT_VOICE exists.
               </p>
               <Button
+                data-testid="bootstrap-voice-authority"
                 onClick={() => {
                   if (acceptGrant) {
                     bootstrapAgentVoiceAuthority(acceptGrant.grantId);
@@ -463,19 +472,44 @@ export function App() {
                   room v{activeVessieVoiceGrant.committedVersion}
                 </div>
               </div>
-              <Button
-                onClick={() => {
-                  if (voiceManagerGrant) {
-                    revokeAgentVoice(
-                      activeVessieVoiceGrant.voiceGrantId,
-                      voiceManagerGrant.grantId
-                    );
+              <div className="button-row">
+                <Button
+                  data-testid="request-vessie-voice"
+                  onClick={() => {
+                    if (voiceManagerGrant) {
+                      requestAgentVoiceUtterance(
+                        "agent-vessie",
+                        activeVessieVoiceGrant.voiceGrantId,
+                        voiceManagerGrant.grantId
+                      );
+                    }
+                  }}
+                  disabled={
+                    !voiceManagerGrant ||
+                    connection !== "connected" ||
+                    !group.joined ||
+                    !activeVessieVoiceSource ||
+                    lastAgentVoiceUtteranceStatus?.state === "rendering" ||
+                    lastAgentVoiceUtteranceStatus?.state === "speaking"
                   }
-                }}
-                disabled={!voiceManagerGrant || connection !== "connected"}
-              >
-                Revoke Vessie voice
-              </Button>
+                >
+                  Ask Vessie to speak proof
+                </Button>
+                <Button
+                  data-testid="revoke-vessie-voice"
+                  onClick={() => {
+                    if (voiceManagerGrant) {
+                      revokeAgentVoice(
+                        activeVessieVoiceGrant.voiceGrantId,
+                        voiceManagerGrant.grantId
+                      );
+                    }
+                  }}
+                  disabled={!voiceManagerGrant || connection !== "connected"}
+                >
+                  Revoke Vessie voice
+                </Button>
+              </div>
             </>
           ) : (
             <>
@@ -485,6 +519,7 @@ export function App() {
                 audience policy. It still does not activate a TTS renderer.
               </p>
               <Button
+                data-testid="grant-vessie-voice"
                 onClick={() => {
                   if (voiceManagerGrant) {
                     grantAgentVoice(
@@ -522,14 +557,51 @@ export function App() {
             <Badge>
               VOICE GRANT {activeVessieVoiceGrant ? "✓" : "✕"}
             </Badge>
-            <Badge>RENDERER NOT WIRED</Badge>
-            <Badge>LIVE AGENT AUDIO ✕</Badge>
+            <Badge>LOCAL RENDERER ADAPTER ✓</Badge>
+            <Badge>
+              AGENT SOURCE {activeVessieVoiceSource ? "✓" : "✕"}
+            </Badge>
+            <Badge>
+              UTTERANCE {lastAgentVoiceUtteranceStatus?.state?.toUpperCase() ?? "IDLE"}
+            </Badge>
           </div>
           <p className="muted">
-            P0-m intentionally stops before synthesis. A future renderer must present
-            the active voice grant, matching agent ID, matching voice ID, and current
-            source policy before an agent-voice source can become executable.
+            P0-n can render Vessie's bounded proof through the configured local
+            renderer. The server checks the active voice grant again before rendering,
+            publishes an agent-owned source through mediasoup DirectTransport, and still
+            requires each listener to subscribe explicitly.
           </p>
+          {activeVessieVoiceGrant && !group.joined && (
+            <p className="notice">
+              Join group media before requesting live agent speech.
+            </p>
+          )}
+          {activeVessieVoiceGrant && group.joined && !activeVessieVoiceSource && (
+            <p className="notice">
+              The voice grant is valid, but no local renderer-backed agent source is
+              available. Check the server renderer configuration.
+            </p>
+          )}
+          {lastAgentVoiceUtteranceStatus && (
+            <div
+              className="delta"
+              data-testid="agent-voice-utterance-status"
+              data-utterance-state={lastAgentVoiceUtteranceStatus.state}
+            >
+              <strong>Latest Vessie utterance</strong>
+              <div className="muted small">
+                {lastAgentVoiceUtteranceStatus.state}
+                <br />
+                voice {lastAgentVoiceUtteranceStatus.voiceId}
+                {lastAgentVoiceUtteranceStatus.sourceId && (
+                  <>
+                    <br />
+                    source {lastAgentVoiceUtteranceStatus.sourceId}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
           {lastAgentVoiceGrant && (
             <div className="delta">
               <strong>Latest agent-voice grant receipt</strong>
@@ -672,10 +744,9 @@ export function App() {
           {!group.joined ? (
             <>
               <p className="muted">
-                P0-l keeps the P0-k source policy and adds observable acceptance
-                evidence. Each live Consumer exposes source identity, track state,
-                packet count, and bytes received so selective routing can be tested
-                across independent browser contexts.
+                P0-n keeps the packet-level acceptance surface and adds an agent-owned
+                voice source when a valid voice grant meets an available local renderer.
+                Humans still join explicitly and subscribe source-by-source.
               </p>
               <Button
                 data-testid="join-group-media"
@@ -1138,10 +1209,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-m adds durable, revocable agent-voice authority without activating synthesis.
-        ACCEPT_OUTCOME may explicitly bootstrap a separate MANAGE_AGENT_VOICE capability;
-        after that, voice grants bind agent ID, voice ID, and explicit-subscription audience.
-        The renderer remains a later capability and cannot infer authority from this UI.
+        P0-n activates a local renderer behind P0-m authority. Piper can synthesize Vessie's
+        granted voice locally, while CI uses a deterministic non-speech renderer to prove the
+        same server-side RTP injection path. Renderer capability never creates authority,
+        and listeners still receive nothing without explicit source subscriptions.
       </footer>
     </main>
   );
