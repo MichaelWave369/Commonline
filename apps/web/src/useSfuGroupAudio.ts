@@ -652,7 +652,6 @@ export function useSfuGroupAudio({
 
         const remove = () => closeConsumer(sourceId);
         consumer.on("transportclose", remove);
-        consumer.on("producerclose", remove);
         consumer.on("trackended", remove);
 
         const resumed = await requestSfu({
