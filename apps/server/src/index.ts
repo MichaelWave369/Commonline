@@ -377,7 +377,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-h fields."
+          message: "join_room is missing required P0-i fields."
         });
         return;
       }
@@ -485,7 +485,209 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "group_media_join") {
+      if (mediaSessions.currentForParticipant(
+        session.roomId,
+        session.participantId
+      )) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "MEDIA_BUSY",
+          message:
+            "Leave the active one-to-one call before joining group media.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const maySpeak = groupMediaPermission(
+        session.roomId,
+        session.participantId,
+        "SPEAK"
+      );
+      const mayReceive = groupMediaPermission(
+        session.roomId,
+        session.participantId,
+        "RECEIVE_MEDIA"
+      );
+
+      if (!maySpeak && !mayReceive) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "Group media requires SPEAK or RECEIVE_MEDIA authority.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const joined = groupMedia.join({
+        roomId: session.roomId,
+        participantId: session.participantId
+      });
+
+      if (!joined.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: joined.code,
+          message: joined.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "group_media_leave") {
+      groupMedia.leave({
+        roomId: session.roomId,
+        participantId: session.participantId
+      });
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "group_media_publish_microphone") {
+      if (
+        !groupMediaPermission(
+          session.roomId,
+          session.participantId,
+          "SPEAK"
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "Publishing a microphone source requires an active SPEAK grant.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const published = groupMedia.publishMicrophone({
+        roomId: session.roomId,
+        participantId: session.participantId
+      });
+
+      if (!published.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: published.code,
+          message: published.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "group_media_unpublish") {
+      const unpublished = groupMedia.unpublish({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        sourceId: message.sourceId
+      });
+
+      if (!unpublished.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: unpublished.code,
+          message: unpublished.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "group_media_subscribe") {
+      if (
+        !groupMediaPermission(
+          session.roomId,
+          session.participantId,
+          "RECEIVE_MEDIA"
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "Subscribing to a media source requires an active RECEIVE_MEDIA grant.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const subscribed = groupMedia.subscribe({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        sourceId: message.sourceId
+      });
+
+      if (!subscribed.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: subscribed.code,
+          message: subscribed.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "group_media_unsubscribe") {
+      const unsubscribed = groupMedia.unsubscribe({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        sourceId: message.sourceId
+      });
+
+      if (!unsubscribed.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: unsubscribed.code,
+          message: unsubscribed.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
     if (message.type === "rtc_call_open") {
+      if (
+        groupMedia.currentForParticipant(
+          session.roomId,
+          session.participantId
+        ) ||
+        groupMedia.currentForParticipant(
+          session.roomId,
+          message.targetParticipantId
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "MEDIA_BUSY",
+          message:
+            "One participant is already attached to the active group media session.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
       const permission = service.canRelayRtc(
         session.roomId,
         session.participantId,
@@ -633,6 +835,54 @@ wss.on("connection", (socket) => {
           generation: message.generation
         });
       }
+      return;
+    }
+
+    if (message.type === "group_rtc_signal") {
+      const validation = groupMedia.validateSignal({
+        roomId: session.roomId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation,
+        actorParticipantId: session.participantId,
+        targetParticipantId: message.targetParticipantId
+      });
+
+      if (!validation.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: validation.code,
+          message: validation.message,
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const target = sessions.current(
+        session.roomId,
+        message.targetParticipantId
+      )?.connection;
+
+      if (!target || target.readyState !== WebSocket.OPEN) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "PEER_UNAVAILABLE",
+          message:
+            "The requested group-media peer has no active signaling connection.",
+          room: service.getRoom(session.roomId)
+        });
+        return;
+      }
+
+      const relay: GroupRtcSignalRelayMessage = {
+        type: "group_rtc_signal",
+        requestId: message.requestId,
+        roomId: session.roomId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation,
+        fromParticipantId: session.participantId,
+        signal: message.signal
+      };
+      send(target, relay);
       return;
     }
 
