@@ -415,3 +415,49 @@ See [MEDIA_SESSION_P0H.md](MEDIA_SESSION_P0H.md).
 ### Next rung
 
 P0-h gives a future SFU a clean object to route. Multi-party media can now be designed around explicit ephemeral sessions without weakening durable room semantics or human media consent.
+
+
+## P0-i — three-human multiparty media boundary
+
+P0-i adds a real three-human audio proof without prematurely locking Commonline to an SFU implementation.
+
+The executable transport is `mesh-p0`, but its control model is already expressed as:
+
+```text
+participant
+   ↓
+identified source
+   ↓
+directed subscription
+   ↓
+required peer transport
+```
+
+### Implemented in this rung
+
+- ephemeral room-level group media session
+- maximum three human participants
+- explicit group join / leave
+- explicit microphone publication
+- source identity bound to owner participant
+- explicit directed subscriptions
+- SPEAK required to publish
+- RECEIVE_MEDIA required to subscribe
+- pair signaling rejected when no subscription requires transport
+- pairwise WebRTC mesh proof using existing STUN/TURN config
+- perfect negotiation retained per participant pair
+- sources remain independently controllable
+- participant leave removes sources/subscriptions
+- no agent listening
+- no group media persistence
+- P0-h -> P0-i storage/wire metadata migration
+
+See [MULTIPARTY_P0I.md](MULTIPARTY_P0I.md).
+
+### Important limitation
+
+The server authorizes subscriptions and signaling, but `mesh-p0` cannot enforce per-track SRTP routing against a malicious modified browser. A real SFU is the next enforcement boundary.
+
+## Next rung: P0-j
+
+Implement an SFU adapter behind the existing participant/source/subscription model, without replacing Commonline's room identity, grants, or durable undertaking semantics with an SFU vendor's room model.
