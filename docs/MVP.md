@@ -665,3 +665,30 @@ Implemented:
 - three-browser no-RTP-before-attention acceptance
 
 See [EXPLICIT_EXCHANGE_P0Q.md](EXPLICIT_EXCHANGE_P0Q.md).
+
+
+## P0-r — selective resumption brief
+
+P0-r returns to the original CommonLine P0 thesis: useful continuity without transcript-as-truth.
+
+Implemented:
+
+- deterministic client-side resume brief
+- inputs limited to durable `RoomSnapshot` + durable `resumeDelta`
+- accepted-work list by durable artifact title and identifiers
+- unresolved bounded work from offered/working/proposed/failed states
+- deterministic next-action selection
+- exact missed durable room events retained for inspection
+- accepted artifact bodies are not duplicated into the compact brief
+- no audio, STT transcript, conversation-exchange transcript, spoken reply, attention lease, scratch, session, signaling, key, or recovery-secret input
+- no model-generated summary
+- no wire/storage migration; schema remains `p0-q.1`
+- unit proof for accepted work, unresolved work, next-action priority, and durable-delta fidelity
+
+See [RESUMPTION_P0R.md](RESUMPTION_P0R.md).
+
+### P0-r boundary
+
+The brief summarizes **state shape**, not conversation meaning.
+
+It may say that a proposal is waiting for review because that is an authoritative durable status. It may not infer that participants agreed, disagreed, promised something, or reached a conclusion unless that conclusion already exists as selected durable room state.
