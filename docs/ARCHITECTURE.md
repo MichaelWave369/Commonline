@@ -303,3 +303,25 @@ The P0-i source/subscription model now drives a mediasoup packet router. Commonl
 One mediasoup Worker and WebRtcServer are shared by the process. Each active group-media generation receives its own Router. Participant transports and packet-routing objects are ephemeral and are closed when the Commonline control state no longer authorizes them.
 
 An SFU transport existing does not create a Commonline grant, source, subscription, or durable room event.
+
+## P0-k source-policy plane
+
+P0-k adds a policy object between a participant's generic SPEAK authority and a concrete mediasoup Producer.
+
+```text
+Room grant plane
+      ↓
+MediaSourcePolicy
+      ↓
+GroupMediaSource
+      ↓
+mediasoup Producer
+      ↓
+explicit subscriptions
+      ↓
+mediasoup Consumers
+```
+
+The policy catalog is ephemeral runtime configuration, not durable room truth. Source policies constrain which principal kinds may instantiate a source class and whether that source class is executable in the current rung.
+
+P0-k deliberately keeps future music, agent voice, and system-tone classes reserved instead of smuggling them into the human microphone path.
