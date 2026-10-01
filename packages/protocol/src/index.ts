@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-j.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-k.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -288,10 +288,33 @@ export interface GroupMediaParticipant {
   joinedAt: string;
 }
 
+export type MediaSourceKind =
+  | "human-microphone"
+  | "sound-effect"
+  | "shared-music"
+  | "agent-voice"
+  | "system-tone";
+
+export type MediaSourceExecutionState = "executable" | "reserved";
+
+export interface MediaSourcePolicy {
+  policyId: string;
+  kind: MediaSourceKind;
+  requiredCapability: "SPEAK";
+  allowedPublisherKinds: PrincipalKind[];
+  audienceMode: "explicit-subscription";
+  retention: "ephemeral";
+  recordingDefault: "not-authorized";
+  maxInstancesPerPublisher: number;
+  executionState: MediaSourceExecutionState;
+}
+
 export interface GroupMediaSource {
   sourceId: string;
   ownerParticipantId: string;
-  kind: "microphone";
+  kind: MediaSourceKind;
+  label: string;
+  policyId: string;
   publishedAt: string;
 }
 
@@ -313,10 +336,12 @@ export interface GroupMediaLeaveMessage {
   roomId: string;
 }
 
-export interface GroupMediaPublishMicrophoneMessage {
-  type: "group_media_publish_microphone";
+export interface GroupMediaPublishSourceMessage {
+  type: "group_media_publish_source";
   requestId: string;
   roomId: string;
+  kind: MediaSourceKind;
+  label: string;
 }
 
 export interface GroupMediaUnpublishMessage {
@@ -349,6 +374,7 @@ export interface GroupMediaStateMessage {
   routerMode: GroupMediaRouterMode;
   maxParticipants: number;
   participants: GroupMediaParticipant[];
+  sourcePolicies: MediaSourcePolicy[];
   sources: GroupMediaSource[];
   subscriptions: GroupMediaSubscription[];
 }
@@ -536,7 +562,7 @@ export type ClientMessage =
   | RtcSignalClientMessage
   | GroupMediaJoinMessage
   | GroupMediaLeaveMessage
-  | GroupMediaPublishMicrophoneMessage
+  | GroupMediaPublishSourceMessage
   | GroupMediaUnpublishMessage
   | GroupMediaSubscribeMessage
   | GroupMediaUnsubscribeMessage
@@ -643,6 +669,9 @@ export type RejectionCode =
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
   | "MEDIA_SOURCE_NOT_FOUND"
+  | "MEDIA_SOURCE_POLICY_DENIED"
+  | "MEDIA_SOURCE_KIND_UNSUPPORTED"
+  | "MEDIA_SOURCE_LIMIT"
   | "MEDIA_SUBSCRIPTION_INVALID"
   | "SFU_NOT_READY"
   | "SFU_SESSION_STALE"
