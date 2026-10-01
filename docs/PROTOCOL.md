@@ -198,3 +198,52 @@ Non-loopback deployments must use HTTPS + WSS. Plain `ws://` is accepted only fo
 ### Media diagnostics
 
 WebRTC candidate selection, RTT, jitter, loss, byte counters, ICE errors, and connection-state changes remain client-local observations. They are not receipt claims and are not durable room truth.
+
+
+## P0-h media-session profile
+
+Wire schema: `p0-h.1`.
+
+Before SDP signaling, a participant sends:
+
+```text
+rtc_call_open
+  roomId
+  targetParticipantId
+```
+
+The server responds to both endpoints with ephemeral:
+
+```text
+rtc_call_session
+  callId
+  generation
+  peerParticipantId
+  initiatorParticipantId
+  polite
+  createdAt
+```
+
+Every subsequent `rtc_signal` binds:
+
+- room id
+- call id
+- generation
+- target participant
+- offer / answer / ICE / hangup payload
+
+The server rejects a signal whose call id, generation, or participant pair does not match an active media session.
+
+Media-session messages do not increment room version and do not enter resume history.
+
+### Glare rule
+
+The participant pair has exactly one deterministic polite peer.
+
+A simultaneous offer collision is resolved by perfect negotiation rather than by creating competing durable state.
+
+### Call lifetime
+
+One participant may occupy at most one active P0-h media session. Simultaneous opens for the same pair coalesce; attempts to open a different call while busy are rejected.
+
+Hangup ends exactly one call generation. Later signaling for that generation is stale.
