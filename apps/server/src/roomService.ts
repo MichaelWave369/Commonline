@@ -219,9 +219,18 @@ export class RoomService {
       };
     }
 
-    const resumeDelta = record.events.filter(
-      (event) => event.version > input.acknowledgedVersion
+    const knownParticipant = record.room.participants.some(
+      (participant) => participant.id === input.participantId
     );
+
+    // P0-s history floor: first membership does not inherit the room's
+    // pre-membership event history. A known participant may resume only the
+    // durable events missed since its acknowledged room version.
+    const resumeDelta = knownParticipant
+      ? record.events.filter(
+          (event) => event.version > input.acknowledgedVersion
+        )
+      : [];
 
     const priorVersion = record.room.version;
     const nextRoom = joinParticipant(record.room, {
