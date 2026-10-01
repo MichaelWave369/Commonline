@@ -1,9 +1,14 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
   type AcceptOutcomeMessage,
   type AgentWorkStatusMessage,
+  type AuthorityTransferReceipt,
+  type IdentityBeginMessage,
+  type IdentityChallengeMessage,
+  type IdentityProveMessage,
+  type IdentityRecoverMessage,
   type JoinRoomMessage,
   type RequestedHumanRole,
   type RoomEvent,
@@ -12,8 +17,16 @@ import {
   type RtcSignalPayload,
   type RtcSignalRelayMessage,
   type ServerMessage,
-  type SubmitWorkMessage
+  type SubmitWorkMessage,
+  type TransferAcceptAuthorityMessage
 } from "@commonline/protocol";
+import {
+  createIdentityCandidate,
+  getOrCreateIdentity,
+  signIdentityChallenge,
+  storeIdentity,
+  type LocalIdentity
+} from "./identityVault";
 
 const ROOM_ID = "commonline-p0";
 const PARTICIPANT_ID_KEY = "commonline:p0d:participant-id";
@@ -22,12 +35,19 @@ const ACK_KEY = "commonline:p0d:ack";
 const NAME_KEY = "commonline:p0d:name";
 const ROLE_KEY = "commonline:p0d:role";
 const ACCEPT_ID_PREFIX = "commonline:p0d:accept:";
+const TRANSFER_ID_PREFIX = "commonline:p0f:transfer:";
 
 type ConnectionState =
   | "disconnected"
   | "connecting"
   | "reconnecting"
   | "connected";
+
+export type IdentityState =
+  | "idle"
+  | "challenging"
+  | "authenticated"
+  | "recovery-required";
 
 function websocketUrl() {
   const configured = import.meta.env.VITE_COMMONLINE_WS_URL as
@@ -68,9 +88,15 @@ export function useCommonlineRoom() {
   const wantsConnectionRef = useRef(false);
   const openSocketRef = useRef<() => void>(() => undefined);
 
-  const participantId = useMemo(() => stableParticipantId(), []);
-  const sessionId = useMemo(() => tabSessionId(), []);
+  const initialParticipantId = stableParticipantId();
+  const [participantId, setParticipantIdState] = useState(initialParticipantId);
+  const participantIdRef = useRef(initialParticipantId);
+  const sessionId = useRef(tabSessionId()).current;
+  const identityRef = useRef<LocalIdentity | null>(null);
+  const recoveryCandidateRef = useRef<LocalIdentity | null>(null);
 
+  const [identityState, setIdentityState] = useState<IdentityState>("idle");
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [connection, setConnection] =
     useState<ConnectionState>("disconnected");
@@ -78,6 +104,8 @@ export function useCommonlineRoom() {
   const [lastEvent, setLastEvent] = useState<RoomEvent | null>(null);
   const [lastAcceptance, setLastAcceptance] =
     useState<AcceptanceReceipt | null>(null);
+  const [lastAuthorityTransfer, setLastAuthorityTransfer] =
+    useState<AuthorityTransferReceipt | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [agentStatuses, setAgentStatuses] = useState<
     Record<string, AgentWorkStatusMessage>
@@ -108,6 +136,46 @@ export function useCommonlineRoom() {
     }
   }, []);
 
+  const sendJoin = useCallback((socket: WebSocket) => {
+    const message: JoinRoomMessage = {
+      type: "join_room",
+      requestId: crypto.randomUUID(),
+      schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+      roomId: ROOM_ID,
+      participantId: participantIdRef.current,
+      sessionId,
+      name: nameRef.current.trim(),
+      requestedRole: requestedRoleRef.current,
+      acknowledgedVersion: acknowledgedVersion()
+    };
+    socket.send(JSON.stringify(message));
+  }, [sessionId]);
+
+  const beginIdentity = useCallback(async (socket: WebSocket) => {
+    try {
+      const identity = await getOrCreateIdentity(participantIdRef.current);
+      identityRef.current = identity;
+      setIdentityState("challenging");
+
+      const message: IdentityBeginMessage = {
+        type: "identity_begin",
+        requestId: crypto.randomUUID(),
+        schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+        participantId: participantIdRef.current,
+        sessionId,
+        publicKey: identity.publicKey
+      };
+      socket.send(JSON.stringify(message));
+    } catch (error) {
+      setIdentityState("recovery-required");
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Could not initialize local cryptographic identity."
+      );
+    }
+  }, [sessionId]);
+
   const scheduleReconnect = useCallback(() => {
     if (!wantsConnectionRef.current) return;
 
@@ -119,6 +187,7 @@ export function useCommonlineRoom() {
     const delay = base + jitter;
 
     setConnection("reconnecting");
+    setIdentityState("idle");
     setNotice(`Connection lost. Retrying in ${delay} ms…`);
 
     clearReconnectTimer();
@@ -139,27 +208,78 @@ export function useCommonlineRoom() {
     setConnection(
       reconnectAttemptRef.current > 0 ? "reconnecting" : "connecting"
     );
+    setIdentityState("idle");
 
     const socket = new WebSocket(websocketUrl());
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
-      const message: JoinRoomMessage = {
-        type: "join_room",
-        requestId: crypto.randomUUID(),
-        schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
-        roomId: ROOM_ID,
-        participantId,
-        sessionId,
-        name: nameRef.current.trim(),
-        requestedRole: requestedRoleRef.current,
-        acknowledgedVersion: acknowledgedVersion()
-      };
-      socket.send(JSON.stringify(message));
+      void beginIdentity(socket);
     });
 
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as ServerMessage;
+
+      if (message.type === "identity_challenge") {
+        const localIdentity = identityRef.current;
+        if (
+          !localIdentity ||
+          localIdentity.participantId !== message.participantId
+        ) {
+          setIdentityState("recovery-required");
+          setNotice("No matching local private key is available for this identity.");
+          return;
+        }
+
+        void signIdentityChallenge(localIdentity, message)
+          .then((signature) => {
+            const proof: IdentityProveMessage = {
+              type: "identity_prove",
+              requestId: crypto.randomUUID(),
+              challengeId: message.challengeId,
+              signature
+            };
+            socket.send(JSON.stringify(proof));
+          })
+          .catch((error) => {
+            setIdentityState("recovery-required");
+            setNotice(
+              error instanceof Error
+                ? error.message
+                : "Could not sign the identity challenge."
+            );
+          });
+        return;
+      }
+
+      if (message.type === "identity_authenticated") {
+        setIdentityState("authenticated");
+        reconnectAttemptRef.current = 0;
+
+        if (message.recoveryCode) {
+          setRecoveryCode(message.recoveryCode);
+        }
+
+        if (message.recovered && recoveryCandidateRef.current) {
+          void storeIdentity(recoveryCandidateRef.current)
+            .then(() => {
+              identityRef.current = recoveryCandidateRef.current;
+              recoveryCandidateRef.current = null;
+              sendJoin(socket);
+            })
+            .catch((error) => {
+              setNotice(
+                error instanceof Error
+                  ? error.message
+                  : "Identity recovered remotely but the replacement key could not be stored locally."
+              );
+            });
+          return;
+        }
+
+        sendJoin(socket);
+        return;
+      }
 
       if (message.type === "room_snapshot") {
         rememberRoom(message.room);
@@ -168,8 +288,8 @@ export function useCommonlineRoom() {
         setConnection("connected");
         setNotice(
           message.resumeDelta.length
-            ? `Resumed with ${message.resumeDelta.length} missed durable event(s).`
-            : "Connected to authoritative room state."
+            ? `Authenticated and resumed with ${message.resumeDelta.length} missed durable event(s).`
+            : "Authenticated and connected to authoritative room state."
         );
         return;
       }
@@ -190,6 +310,17 @@ export function useCommonlineRoom() {
           message.replayed
             ? "Recovered the original acceptance receipt after retry."
             : "Outcome accepted with a durable receipt."
+        );
+        return;
+      }
+
+      if (message.type === "authority_transfer_receipt") {
+        rememberRoom(message.room);
+        setLastAuthorityTransfer(message.receipt);
+        setNotice(
+          message.replayed
+            ? "Recovered the original authority-transfer receipt after retry."
+            : "ACCEPT_OUTCOME authority transferred with durable receipts."
         );
         return;
       }
@@ -216,6 +347,21 @@ export function useCommonlineRoom() {
         setLastAcceptance(message.canonicalAcceptance);
       }
 
+      if (
+        message.code === "TRANSFER_ALREADY_APPLIED" &&
+        message.canonicalTransfer
+      ) {
+        setLastAuthorityTransfer(message.canonicalTransfer);
+      }
+
+      if (
+        message.code === "IDENTITY_PROOF_INVALID" ||
+        message.code === "IDENTITY_RECOVERY_INVALID" ||
+        message.code === "IDENTITY_NOT_FOUND"
+      ) {
+        setIdentityState("recovery-required");
+      }
+
       setNotice(
         message.code === "STALE_VERSION"
           ? "Room changed before your action landed. State reconciled; retry the action."
@@ -228,14 +374,22 @@ export function useCommonlineRoom() {
         socketRef.current = null;
       }
       setRtcInbox([]);
+      setIdentityState("idle");
 
       if (event.code === 4000) {
         wantsConnectionRef.current = false;
         clearReconnectTimer();
         setConnection("disconnected");
         setNotice(
-          "This session was superseded by a newer connection for the same participant."
+          "This session was superseded by a newer connection for the same authenticated participant."
         );
+        return;
+      }
+
+      if (event.code === 4400) {
+        wantsConnectionRef.current = false;
+        clearReconnectTimer();
+        setConnection("disconnected");
         return;
       }
 
@@ -251,11 +405,11 @@ export function useCommonlineRoom() {
       setNotice("Commonline transport error. Reconnect policy is active.");
     });
   }, [
+    beginIdentity,
     clearReconnectTimer,
-    participantId,
     rememberRoom,
     scheduleReconnect,
-    sessionId
+    sendJoin
   ]);
 
   openSocketRef.current = openSocket;
@@ -268,6 +422,7 @@ export function useCommonlineRoom() {
     localStorage.setItem(ROLE_KEY, requestedRoleRef.current);
     wantsConnectionRef.current = true;
     reconnectAttemptRef.current = 0;
+    setRecoveryCode(null);
     setNotice(null);
     openSocketRef.current();
   }, []);
@@ -279,7 +434,61 @@ export function useCommonlineRoom() {
     socketRef.current?.close(1000, "participant left");
     socketRef.current = null;
     setConnection("disconnected");
+    setIdentityState("idle");
   }, [clearReconnectTimer]);
+
+  const recoverIdentity = useCallback(
+    async (recoverParticipantId: string, code: string) => {
+      const cleanedId = recoverParticipantId.trim();
+      const cleanedCode = code.trim();
+      if (!cleanedId || !cleanedCode) {
+        setNotice("Recovery requires both participant ID and recovery code.");
+        return;
+      }
+
+      try {
+        const candidate = await createIdentityCandidate(cleanedId);
+        recoveryCandidateRef.current = candidate;
+        participantIdRef.current = cleanedId;
+        setParticipantIdState(cleanedId);
+        localStorage.setItem(PARTICIPANT_ID_KEY, cleanedId);
+
+        if (
+          !socketRef.current ||
+          socketRef.current.readyState !== WebSocket.OPEN
+        ) {
+          wantsConnectionRef.current = true;
+          openSocketRef.current();
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+
+        const socket = socketRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          setNotice("Recovery transport is not connected yet. Retry in a moment.");
+          return;
+        }
+
+        const message: IdentityRecoverMessage = {
+          type: "identity_recover",
+          requestId: crypto.randomUUID(),
+          schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+          participantId: cleanedId,
+          sessionId,
+          recoveryCode: cleanedCode,
+          newPublicKey: candidate.publicKey
+        };
+        socket.send(JSON.stringify(message));
+      } catch (error) {
+        recoveryCandidateRef.current = null;
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "Could not prepare replacement identity key."
+        );
+      }
+    },
+    [sessionId]
+  );
 
   const submitWork = useCallback(
     (prompt: string) => {
@@ -302,9 +511,12 @@ export function useCommonlineRoom() {
 
       const grant = room.grants.find(
         (receipt) =>
-          receipt.subjectParticipantId === participantId &&
+          receipt.subjectParticipantId === participantIdRef.current &&
           receipt.capability === "ACCEPT_OUTCOME" &&
-          !receipt.revokedAt
+          !receipt.revokedAt &&
+          !room.grantRevocations.some(
+            (revocation) => revocation.grantId === receipt.grantId
+          )
       );
 
       if (!grant) {
@@ -331,7 +543,48 @@ export function useCommonlineRoom() {
       };
       socketRef.current.send(JSON.stringify(message));
     },
-    [participantId, room]
+    [room]
+  );
+
+  const transferAcceptAuthority = useCallback(
+    (targetParticipantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) return;
+
+      const authorityGrant = room.grants.find(
+        (receipt) =>
+          receipt.subjectParticipantId === participantIdRef.current &&
+          receipt.capability === "ACCEPT_OUTCOME" &&
+          !receipt.revokedAt &&
+          !room.grantRevocations.some(
+            (revocation) => revocation.grantId === receipt.grantId
+          )
+      );
+
+      if (!authorityGrant) {
+        setNotice("Only the current ACCEPT_OUTCOME authority holder can transfer it.");
+        return;
+      }
+
+      const storageKey =
+        `${TRANSFER_ID_PREFIX}${authorityGrant.grantId}:${targetParticipantId}`;
+      let transferId = sessionStorage.getItem(storageKey);
+      if (!transferId) {
+        transferId = `transfer-${crypto.randomUUID()}`;
+        sessionStorage.setItem(storageKey, transferId);
+      }
+
+      const message: TransferAcceptAuthorityMessage = {
+        type: "transfer_accept_authority",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        transferId,
+        targetParticipantId,
+        authorityGrantId: authorityGrant.grantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+    },
+    [room]
   );
 
   const sendRtcSignal = useCallback(
@@ -371,6 +624,10 @@ export function useCommonlineRoom() {
   return {
     participantId,
     sessionId,
+    identityState,
+    recoveryCode,
+    clearRecoveryCode: () => setRecoveryCode(null),
+    recoverIdentity,
     name,
     setName,
     requestedRole,
@@ -380,6 +637,7 @@ export function useCommonlineRoom() {
     resumeDelta,
     lastEvent,
     lastAcceptance,
+    lastAuthorityTransfer,
     agentStatuses,
     rtcInbox,
     notice,
@@ -387,6 +645,7 @@ export function useCommonlineRoom() {
     disconnect,
     submitWork,
     acceptOutcome,
+    transferAcceptAuthority,
     sendRtcSignal,
     consumeRtcSignal
   };
