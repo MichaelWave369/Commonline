@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-p.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-q.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -409,6 +409,31 @@ export interface SubmitListeningShareMessage {
   pcm16Base64: string;
 }
 
+export type ConversationExchangeState =
+  | "heard"
+  | "responded"
+  | "expired";
+
+export interface ConversationExchange {
+  exchangeId: string;
+  roomId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  listeningShareId: string;
+  state: ConversationExchangeState;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface RequestExchangeResponseMessage {
+  type: "request_exchange_response";
+  requestId: string;
+  roomId: string;
+  exchangeId: string;
+  attentionLeaseId: string;
+  agentParticipantId: string;
+}
+
 export interface RtcIceServerConfig {
   urls: string[];
   username?: string;
@@ -746,6 +771,7 @@ export type ClientMessage =
   | GrantListeningShareMessage
   | RevokeListeningShareMessage
   | SubmitListeningShareMessage
+  | RequestExchangeResponseMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
   | RtcSignalClientMessage
@@ -923,6 +949,29 @@ export interface ListeningShareResultMessage {
   engine: string;
   sampleCount: number;
   durationMs: number;
+  exchange: ConversationExchange;
+}
+
+export type ExchangeResponseState =
+  | "thinking"
+  | "rendering"
+  | "speaking"
+  | "completed"
+  | "failed";
+
+export interface ExchangeResponseStatusMessage {
+  type: "exchange_response_status";
+  requestId: string;
+  roomId: string;
+  exchangeId: string;
+  attentionLeaseId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: ExchangeResponseState;
+  errorCode?: string;
+  exchange?: ConversationExchange;
 }
 
 export interface AgentWorkStatusMessage {
@@ -988,6 +1037,11 @@ export type RejectionCode =
   | "LISTENING_SHARE_BUSY"
   | "STT_UNAVAILABLE"
   | "STT_FAILED"
+  | "EXCHANGE_NOT_FOUND"
+  | "EXCHANGE_NOT_OWNED"
+  | "EXCHANGE_EXPIRED"
+  | "EXCHANGE_ALREADY_RESPONDED"
+  | "EXCHANGE_BUSY"
   | "MEDIA_BUSY"
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
@@ -1033,6 +1087,7 @@ export type ServerMessage =
   | ListeningShareLeaseStateMessage
   | ListeningShareStatusMessage
   | ListeningShareResultMessage
+  | ExchangeResponseStatusMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage
