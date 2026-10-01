@@ -227,7 +227,7 @@ export function App() {
           {group.joined && (
             <Badge>GROUP {group.routerMode?.toUpperCase() ?? "MEDIA"}</Badge>
           )}
-          {room && <Badge>{room.schemaVersion}</Badge>
+          {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
       </header>
