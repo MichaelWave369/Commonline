@@ -12,10 +12,12 @@
     "dev:web": "npm run dev -w @commonline/web",
     "build": "npm run build -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
-    "test": "npm run test -ws --if-present"
+    "test": "npm run test -ws --if-present",
+    "test:media-acceptance": "playwright test tests/e2e/media-acceptance.spec.ts --project=chromium"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@playwright/test": "^1.55.0"
   }
 }
