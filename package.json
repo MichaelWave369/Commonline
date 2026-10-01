@@ -13,7 +13,8 @@
     "build": "npm run build -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
     "test": "npm run test -ws --if-present",
-    "test:media-acceptance": "playwright test tests/e2e/media-acceptance.spec.ts --project=chromium"
+    "test:media-acceptance": "playwright test tests/e2e/media-acceptance.spec.ts --project=chromium",
+    "test:p0-experience": "playwright test tests/e2e/experience-proof.spec.ts --project=chromium"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
