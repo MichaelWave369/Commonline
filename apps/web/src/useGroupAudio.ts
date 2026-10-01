@@ -355,6 +355,8 @@ export function useGroupAudio({
         return;
       }
 
+      if (signal.kind !== "ice") return;
+
       const candidate: RTCIceCandidateInit = {
         candidate: signal.candidate,
         sdpMid: signal.sdpMid,
