@@ -484,3 +484,42 @@ Implemented in this rung:
 - explicit P0-i to P0-j metadata migration
 
 See SFU_P0J.md for the enforcement boundary and live acceptance test.
+
+## P0-k — governed media source policy
+
+P0-k inserts a source-policy gate above the P0-j SFU.
+
+```text
+SPEAK grant
+    +
+principal kind
+    +
+source policy
+    +
+explicit source registration
+    ↓
+mediasoup Producer
+    ↓
+explicit subscriber + RECEIVE_MEDIA
+    ↓
+mediasoup Consumer
+```
+
+### Implemented in this rung
+
+- typed media source catalog
+- executable human-microphone source
+- executable human sound-effect source
+- reserved shared-music source class
+- reserved agent-voice source class
+- reserved system-tone source class
+- source policy IDs carried into SFU production
+- principal-kind checks before publishing
+- per-kind source limits
+- explicit-subscription audience policy
+- ephemeral retention declaration
+- recording default remains not-authorized
+- Web Audio generated sound-effect proof routed through mediasoup
+- P0-j -> P0-k storage/wire metadata migration
+
+See [MEDIA_SOURCE_POLICY_P0K.md](MEDIA_SOURCE_POLICY_P0K.md).
