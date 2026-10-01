@@ -190,7 +190,7 @@ export class IdentityService {
     let verified = false;
     try {
       const keyObject = createPublicKey({
-        key: publicKey,
+        key: publicKey as JsonWebKey,
         format: "jwk"
       });
       verified = verify(
