@@ -30,6 +30,18 @@ import {
   type RtcSignalPayload,
   type RtcSignalRelayMessage,
   type ServerMessage,
+  type SfuCapabilitiesMessage,
+  type SfuCapabilitiesRequestMessage,
+  type SfuConsumeMessage,
+  type SfuConsumedMessage,
+  type SfuConsumerResumeMessage,
+  type SfuConsumerResumedMessage,
+  type SfuProduceMessage,
+  type SfuProducedMessage,
+  type SfuTransportConnectMessage,
+  type SfuTransportConnectedMessage,
+  type SfuTransportCreateMessage,
+  type SfuTransportCreatedMessage,
   type SubmitWorkMessage,
   type TransferAcceptAuthorityMessage
 } from "@commonline/protocol";
@@ -63,6 +75,28 @@ export type IdentityState =
   | "authenticated"
   | "recovery-required";
 
+type SfuClientMessage =
+  | SfuCapabilitiesRequestMessage
+  | SfuTransportCreateMessage
+  | SfuTransportConnectMessage
+  | SfuProduceMessage
+  | SfuConsumeMessage
+  | SfuConsumerResumeMessage;
+
+export type SfuServerResponse =
+  | SfuCapabilitiesMessage
+  | SfuTransportCreatedMessage
+  | SfuTransportConnectedMessage
+  | SfuProducedMessage
+  | SfuConsumedMessage
+  | SfuConsumerResumedMessage;
+
+interface PendingSfuRequest {
+  resolve: (message: SfuServerResponse) => void;
+  reject: (error: Error) => void;
+  timer: number;
+}
+
 function stableParticipantId() {
   let value = localStorage.getItem(PARTICIPANT_ID_KEY);
   if (!value) {
@@ -93,6 +127,7 @@ export function useCommonlineRoom() {
   const reconnectAttemptRef = useRef(0);
   const wantsConnectionRef = useRef(false);
   const openSocketRef = useRef<() => void>(() => undefined);
+  const pendingSfuRef = useRef(new Map<string, PendingSfuRequest>());
 
   const initialParticipantId = stableParticipantId();
   const [participantId, setParticipantIdState] = useState(initialParticipantId);
@@ -149,6 +184,14 @@ export function useCommonlineRoom() {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+  }, []);
+
+  const rejectPendingSfu = useCallback((reason: string) => {
+    for (const pending of pendingSfuRef.current.values()) {
+      window.clearTimeout(pending.timer);
+      pending.reject(new Error(reason));
+    }
+    pendingSfuRef.current.clear();
   }, []);
 
   const clearRtcConfigTimer = useCallback(() => {
@@ -275,6 +318,36 @@ export function useCommonlineRoom() {
 
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as ServerMessage;
+
+      if ("requestId" in message) {
+        const pending = pendingSfuRef.current.get(message.requestId);
+        if (pending) {
+          pendingSfuRef.current.delete(message.requestId);
+          window.clearTimeout(pending.timer);
+
+          if (message.type === "intent_rejected") {
+            pending.reject(
+              new Error(`${message.code}: ${message.message}`)
+            );
+          } else if (
+            message.type === "sfu_capabilities" ||
+            message.type === "sfu_transport_created" ||
+            message.type === "sfu_transport_connected" ||
+            message.type === "sfu_produced" ||
+            message.type === "sfu_consumed" ||
+            message.type === "sfu_consumer_resumed"
+          ) {
+            pending.resolve(message);
+          } else {
+            pending.reject(
+              new Error(
+                `Unexpected SFU response type ${message.type}.`
+              )
+            );
+          }
+          return;
+        }
+      }
 
       if (message.type === "identity_challenge") {
         const localIdentity = identityRef.current;
@@ -482,6 +555,7 @@ export function useCommonlineRoom() {
       setRtcSessionInbox([]);
       setGroupRtcInbox([]);
       setGroupMediaState(null);
+      rejectPendingSfu("Commonline signaling connection closed.");
       setRtcConfig(null);
       clearRtcConfigTimer();
       setIdentityState("idle");
@@ -740,6 +814,37 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const requestSfu = useCallback(
+    (message: SfuClientMessage): Promise<SfuServerResponse> => {
+      const socket = socketRef.current;
+      if (!room || !socket || socket.readyState !== WebSocket.OPEN) {
+        return Promise.reject(
+          new Error("Commonline signaling is not connected.")
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => {
+          pendingSfuRef.current.delete(message.requestId);
+          reject(
+            new Error(
+              `SFU request ${message.type} timed out.`
+            )
+          );
+        }, 12_000);
+
+        pendingSfuRef.current.set(message.requestId, {
+          resolve,
+          reject,
+          timer
+        });
+
+        socket.send(JSON.stringify(message));
+      });
+    },
+    [room]
+  );
+
   const sendGroupMessage = useCallback(
     (message:
       | GroupMediaJoinMessage
@@ -917,6 +1022,7 @@ export function useCommonlineRoom() {
     unsubscribeGroupSource,
     sendGroupRtcSignal,
     consumeGroupRtcSignal,
+    requestSfu,
     consumeRtcSession,
     consumeRtcSignal
   };
