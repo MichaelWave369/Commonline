@@ -117,3 +117,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-l three-browser live media acceptance with per-source RTP evidence
 
 - P0-m durable agent voice authority, voice identity, and explicit revocation
+
+- P0-n local agent voice renderer with Piper adapter, direct PCMU RTP, and revocation-tested delivery
