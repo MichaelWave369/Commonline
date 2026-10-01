@@ -415,3 +415,26 @@ The attention registry is not part of SQLite, room versions, or durable event hi
 Lease consumption occurs inside the voice runtime after room, voice-grant, renderer, prompt, group-media, and busy-state checks. This prevents an internal caller from bypassing the attention boundary while still avoiding unnecessary lease consumption for obviously invalid requests.
 
 P0-o keeps prompts and generated turn text out of the status plane and out of durable room state.
+
+
+## P0-p bounded listening plane
+
+P0-p introduces a separate selected-context path rather than extending the SFU audience graph:
+
+```text
+explicit human capture
+      ↓
+ListeningShareLease
+      ↓
+16 kHz PCM16
+      ↓
+LocalSpeechRecognizer
+      ↓
+ephemeral transcript
+      ↓
+agent READ_SELECTED_CONTEXT
+```
+
+The target agent never becomes a subscriber to the human microphone source.
+
+Listening leases, audio, transcripts, recognizer buffers, and listening status remain outside SQLite and room-version history. Content-free status may be observed by the room while transcript content is returned only to the sharing human.

@@ -27,10 +27,15 @@ import {
   type JoinRoomMessage,
   type GrantAgentVoiceMessage,
   type GrantAttentionLeaseMessage,
+  type GrantListeningShareMessage,
+  type ListeningShareLease,
+  type ListeningShareResultMessage,
+  type ListeningShareStatusMessage,
   type MediaSourceKind,
   type RequestedHumanRole,
   type RevokeAgentVoiceMessage,
   type RevokeAttentionLeaseMessage,
+  type RevokeListeningShareMessage,
   type RequestAgentTurnMessage,
   type RequestAgentVoiceUtteranceMessage,
   type RoomEvent,
@@ -43,6 +48,7 @@ import {
   type RtcSignalPayload,
   type RtcSignalRelayMessage,
   type ServerMessage,
+  type SubmitListeningShareMessage,
   type SfuCapabilitiesMessage,
   type SfuCapabilitiesRequestMessage,
   type SfuConsumeMessage,
@@ -180,6 +186,12 @@ export function useCommonlineRoom() {
     useState<AttentionLease | null>(null);
   const [lastAgentTurnStatus, setLastAgentTurnStatus] =
     useState<AgentTurnStatusMessage | null>(null);
+  const [listeningShareLease, setListeningShareLease] =
+    useState<ListeningShareLease | null>(null);
+  const [lastListeningShareStatus, setLastListeningShareStatus] =
+    useState<ListeningShareStatusMessage | null>(null);
+  const [lastListeningShareResult, setLastListeningShareResult] =
+    useState<ListeningShareResultMessage | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
@@ -568,6 +580,38 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "listening_share_lease_state") {
+        setListeningShareLease(message.lease);
+        if (message.lease.state === "active") {
+          setLastListeningShareStatus(null);
+          setLastListeningShareResult(null);
+        }
+        setNotice(
+          message.lease.state === "active"
+            ? "Bounded listening-share lease granted."
+            : `Listening-share lease is now ${message.lease.state}.`
+        );
+        return;
+      }
+
+      if (message.type === "listening_share_status") {
+        setLastListeningShareStatus(message);
+        if (message.state === "failed") {
+          setNotice(
+            `Listening share failed: ${message.errorCode ?? "unknown STT error"}`
+          );
+        }
+        return;
+      }
+
+      if (message.type === "listening_share_result") {
+        setLastListeningShareResult(message);
+        setNotice(
+          `Vessie received one ephemeral local transcript via ${message.engine}.`
+        );
+        return;
+      }
+
       if (message.type === "agent_work_status") {
         setAgentStatuses((current) => ({
           ...current,
@@ -679,6 +723,9 @@ export function useCommonlineRoom() {
       setGroupMediaState(null);
       setAttentionLease(null);
       setLastAgentTurnStatus(null);
+      setListeningShareLease(null);
+      setLastListeningShareStatus(null);
+      setLastListeningShareResult(null);
       rejectPendingSfu("Commonline signaling connection closed.");
       setRtcConfig(null);
       clearRtcConfigTimer();
@@ -987,6 +1034,70 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const grantListeningShare = useCallback(
+    (agentParticipantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: GrantListeningShareMessage = {
+        type: "grant_listening_share",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        agentParticipantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const revokeListeningShare = useCallback(
+    (leaseId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RevokeListeningShareMessage = {
+        type: "revoke_listening_share",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        leaseId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const submitListeningShare = useCallback(
+    (
+      agentParticipantId: string,
+      leaseId: string,
+      pcm16Base64: string,
+      sampleCount: number
+    ) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: SubmitListeningShareMessage = {
+        type: "submit_listening_share",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        shareId: `listening-share-${crypto.randomUUID()}`,
+        leaseId,
+        agentParticipantId,
+        sampleRate: 16000,
+        sampleCount,
+        pcm16Base64
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const grantAttentionLease = useCallback(
     (agentParticipantId: string) => {
       if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -1186,6 +1297,9 @@ export function useCommonlineRoom() {
       setGroupRtcInbox([]);
       setAttentionLease(null);
       setLastAgentTurnStatus(null);
+      setListeningShareLease(null);
+      setLastListeningShareStatus(null);
+      setLastListeningShareResult(null);
     }
     return sent;
   }, [room, sendGroupMessage]);
@@ -1315,6 +1429,9 @@ export function useCommonlineRoom() {
     lastAgentVoiceUtteranceStatus,
     attentionLease,
     lastAgentTurnStatus,
+    listeningShareLease,
+    lastListeningShareStatus,
+    lastListeningShareResult,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -1330,6 +1447,9 @@ export function useCommonlineRoom() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    grantListeningShare,
+    revokeListeningShare,
+    submitListeningShare,
     grantAttentionLease,
     revokeAttentionLease,
     requestAgentTurn,

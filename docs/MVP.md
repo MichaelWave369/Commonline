@@ -615,3 +615,28 @@ Implemented:
 - live three-browser lease/RTP acceptance
 
 See [ATTENTION_LEASE_P0O.md](ATTENTION_LEASE_P0O.md).
+
+
+## P0-p — governed push-to-share listening
+
+Implemented:
+
+- one-use human-owned listening-share lease
+- 60-second default lease TTL
+- five-second maximum captured clip
+- explicit browser microphone capture
+- Web Audio PCM collection
+- browser resampling to 16 kHz PCM16
+- optional local whisper.cpp recognizer
+- no automatic STT model download
+- deterministic CI recognizer
+- target-agent `READ_SELECTED_CONTEXT` check
+- content-free room-wide listening status
+- transcript returned only to sharing human
+- no agent SFU microphone Consumer
+- no ambient listening
+- no durable audio or transcript
+- P0-o -> P0-p wire/storage metadata migration
+- three-browser privacy acceptance
+
+See [GOVERNED_LISTENING_P0P.md](GOVERNED_LISTENING_P0P.md).
