@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-f.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-g.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type PrincipalKind = "human" | "agent" | "service" | "device";
@@ -228,6 +228,33 @@ export interface TransferAcceptAuthorityMessage {
   authorityGrantId: string;
 }
 
+export interface RtcIceServerConfig {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+export type RtcCredentialMode =
+  | "none"
+  | "static-env"
+  | "ephemeral-rest";
+
+export interface RtcConfigRequestMessage {
+  type: "rtc_config_request";
+  requestId: string;
+  roomId: string;
+}
+
+export interface RtcConfigMessage {
+  type: "rtc_config";
+  requestId: string;
+  roomId: string;
+  iceServers: RtcIceServerConfig[];
+  iceTransportPolicy: "all" | "relay";
+  credentialMode: RtcCredentialMode;
+  expiresAt?: string;
+}
+
 export type RtcSignalPayload =
   | {
       kind: "offer" | "answer";
@@ -261,6 +288,7 @@ export type ClientMessage =
   | SubmitWorkMessage
   | AcceptOutcomeMessage
   | TransferAcceptAuthorityMessage
+  | RtcConfigRequestMessage
   | RtcSignalClientMessage;
 
 export interface IdentityChallengeMessage {
@@ -372,5 +400,6 @@ export type ServerMessage =
   | AcceptanceReceiptMessage
   | AuthorityTransferReceiptMessage
   | AgentWorkStatusMessage
+  | RtcConfigMessage
   | RtcSignalRelayMessage
   | IntentRejectedMessage;

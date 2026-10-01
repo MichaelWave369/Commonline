@@ -13,6 +13,8 @@ import {
   type RequestedHumanRole,
   type RoomEvent,
   type RoomSnapshot,
+  type RtcConfigMessage,
+  type RtcConfigRequestMessage,
   type RtcSignalClientMessage,
   type RtcSignalPayload,
   type RtcSignalRelayMessage,
@@ -27,6 +29,7 @@ import {
   storeIdentity,
   type LocalIdentity
 } from "./identityVault";
+import { resolveCommonlineWebSocketUrl } from "./transportSecurity";
 
 const ROOM_ID = "commonline-p0";
 const PARTICIPANT_ID_KEY = "commonline:p0d:participant-id";
@@ -48,15 +51,6 @@ export type IdentityState =
   | "challenging"
   | "authenticated"
   | "recovery-required";
-
-function websocketUrl() {
-  const configured = import.meta.env.VITE_COMMONLINE_WS_URL as
-    | string
-    | undefined;
-  if (configured) return configured;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.hostname}:8787`;
-}
 
 function stableParticipantId() {
   let value = localStorage.getItem(PARTICIPANT_ID_KEY);
@@ -84,6 +78,7 @@ function acknowledgedVersion() {
 export function useCommonlineRoom() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const rtcConfigTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const wantsConnectionRef = useRef(false);
   const openSocketRef = useRef<() => void>(() => undefined);
@@ -111,6 +106,7 @@ export function useCommonlineRoom() {
   const [lastAuthorityTransfer, setLastAuthorityTransfer] =
     useState<AuthorityTransferReceipt | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
+  const [rtcConfig, setRtcConfig] = useState<RtcConfigMessage | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<
     Record<string, AgentWorkStatusMessage>
   >({});
@@ -137,6 +133,13 @@ export function useCommonlineRoom() {
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRtcConfigTimer = useCallback(() => {
+    if (rtcConfigTimerRef.current !== null) {
+      window.clearTimeout(rtcConfigTimerRef.current);
+      rtcConfigTimerRef.current = null;
     }
   }, []);
 
@@ -214,7 +217,26 @@ export function useCommonlineRoom() {
     );
     setIdentityState("idle");
 
-    const socket = new WebSocket(websocketUrl());
+    let signalingUrl: string;
+    try {
+      signalingUrl = resolveCommonlineWebSocketUrl({
+        pageUrl: window.location.href,
+        configuredUrl: import.meta.env.VITE_COMMONLINE_WS_URL as
+          | string
+          | undefined
+      });
+    } catch (error) {
+      wantsConnectionRef.current = false;
+      setConnection("disconnected");
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Commonline refused an insecure signaling configuration."
+      );
+      return;
+    }
+
+    const socket = new WebSocket(signalingUrl);
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
@@ -306,6 +328,14 @@ export function useCommonlineRoom() {
         setResumeDelta(message.resumeDelta);
         reconnectAttemptRef.current = 0;
         setConnection("connected");
+
+        const rtcRequest: RtcConfigRequestMessage = {
+          type: "rtc_config_request",
+          requestId: crypto.randomUUID(),
+          roomId: message.room.roomId
+        };
+        socket.send(JSON.stringify(rtcRequest));
+
         setNotice(
           message.resumeDelta.length
             ? `Authenticated and resumed with ${message.resumeDelta.length} missed durable event(s).`
@@ -353,6 +383,28 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "rtc_config") {
+        setRtcConfig(message);
+        clearRtcConfigTimer();
+
+        if (message.expiresAt) {
+          const refreshIn = Math.max(
+            5_000,
+            Date.parse(message.expiresAt) - Date.now() - 60_000
+          );
+          rtcConfigTimerRef.current = window.setTimeout(() => {
+            if (socket.readyState !== WebSocket.OPEN) return;
+            const refresh: RtcConfigRequestMessage = {
+              type: "rtc_config_request",
+              requestId: crypto.randomUUID(),
+              roomId: message.roomId
+            };
+            socket.send(JSON.stringify(refresh));
+          }, refreshIn);
+        }
+        return;
+      }
+
       if (message.type === "rtc_signal") {
         setRtcInbox((current) => [...current, message]);
         return;
@@ -397,6 +449,8 @@ export function useCommonlineRoom() {
         socketRef.current = null;
       }
       setRtcInbox([]);
+      setRtcConfig(null);
+      clearRtcConfigTimer();
       setIdentityState("idle");
 
       if (event.code === 4000) {
@@ -430,6 +484,7 @@ export function useCommonlineRoom() {
   }, [
     beginIdentity,
     clearReconnectTimer,
+    clearRtcConfigTimer,
     rememberRoom,
     scheduleReconnect,
     sendJoin
@@ -454,11 +509,12 @@ export function useCommonlineRoom() {
     wantsConnectionRef.current = false;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
+    clearRtcConfigTimer();
     socketRef.current?.close(1000, "participant left");
     socketRef.current = null;
     setConnection("disconnected");
     setIdentityState("idle");
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, clearRtcConfigTimer]);
 
   const recoverIdentity = useCallback(
     async (recoverParticipantId: string, code: string) => {
@@ -661,6 +717,7 @@ export function useCommonlineRoom() {
     lastAuthorityTransfer,
     agentStatuses,
     rtcInbox,
+    rtcConfig,
     notice,
     connect,
     disconnect,

@@ -25,6 +25,7 @@ export function App() {
     lastAuthorityTransfer,
     agentStatuses,
     rtcInbox,
+    rtcConfig,
     notice,
     connect,
     disconnect,
@@ -37,6 +38,7 @@ export function App() {
 
   const audio = usePeerAudio({
     roomConnected: connection === "connected",
+    rtcConfig,
     rtcInbox,
     consumeRtcSignal,
     sendRtcSignal
@@ -111,6 +113,29 @@ export function App() {
     (participant) => participant.id === audio.peerId
   );
 
+  const packetLossPercent = useMemo(() => {
+    const lost = audio.diagnostics.metrics.packetsLost;
+    const received = audio.diagnostics.metrics.packetsReceived;
+    if (
+      lost === undefined ||
+      received === undefined ||
+      lost + received <= 0
+    ) {
+      return undefined;
+    }
+    return ((lost / (lost + received)) * 100).toFixed(2);
+  }, [
+    audio.diagnostics.metrics.packetsLost,
+    audio.diagnostics.metrics.packetsReceived
+  ]);
+
+  const hasTurn =
+    rtcConfig?.iceServers.some((server) =>
+      server.urls.some(
+        (url) => url.startsWith("turn:") || url.startsWith("turns:")
+      )
+    ) ?? false;
+
   const agentStatus = useMemo(() => {
     const statuses = Object.values(agentStatuses).filter(
       (status) => status.participantId === "agent-vessie"
@@ -127,13 +152,14 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-f IDENTITY + AUTHORITY</div>
-          <h1>{room?.purpose ?? "Prove who returned without confusing identity and authority"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-g INTERNET MEDIA HARDENING</div>
+          <h1>{room?.purpose ?? "Make the governed call survive hostile networks"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
           <Badge>IDENTITY {identityState.toUpperCase()}</Badge>
           <Badge>AUDIO {audio.state.toUpperCase()}</Badge>
+          <Badge>ROUTE {audio.diagnostics.metrics.route.toUpperCase()}</Badge>
           {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
@@ -322,7 +348,9 @@ export function App() {
                 Your microphone is not opened until you choose Answer.
               </p>
               <div className="button-row">
-                <Button onClick={audio.answerCall}>Answer</Button>
+                <Button onClick={audio.answerCall} disabled={!audio.rtcReady}>
+                  Answer
+                </Button>
                 <Button onClick={audio.declineCall}>Decline</Button>
               </div>
             </div>
@@ -339,7 +367,11 @@ export function App() {
                     </div>
                     <Button
                       onClick={() => audio.startCall(participant.id)}
-                      disabled={!canSpeak || !canReceiveMedia}
+                      disabled={
+                        !canSpeak ||
+                        !canReceiveMedia ||
+                        !audio.rtcReady
+                      }
                     >
                       Call
                     </Button>
@@ -360,6 +392,11 @@ export function App() {
                 <Button onClick={audio.hangup}>End call</Button>
               </div>
             </div>
+          )}
+          {!audio.rtcReady && connection === "connected" && (
+            <p className="notice">
+              Waiting for usable ICE configuration from the authenticated room service.
+            </p>
           )}
           {audio.error && <p className="notice">{audio.error}</p>}
           <audio ref={remoteAudioRef} autoPlay playsInline controls className="remote-audio">
@@ -402,6 +439,85 @@ export function App() {
                 </div>
               ))}
             </div>
+          )}
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Call path diagnostics</SectionTitle>
+          <div className="grant-grid">
+            <Badge>NETWORK {audio.diagnostics.networkOnline ? "ONLINE" : "OFFLINE"}</Badge>
+            <Badge>CONTEXT {audio.diagnostics.mediaContext.toUpperCase()}</Badge>
+            <Badge>ICE {audio.diagnostics.iceConnectionState.toUpperCase()}</Badge>
+            <Badge>PEER {audio.diagnostics.connectionState.toUpperCase()}</Badge>
+            <Badge>ROUTE {audio.diagnostics.metrics.route.toUpperCase()}</Badge>
+            <Badge>POLICY {audio.diagnostics.iceTransportPolicy.toUpperCase()}</Badge>
+          </div>
+
+          <div className="delta">
+            <strong>Selected path</strong>
+            <p>
+              {audio.diagnostics.metrics.localCandidateType} →{" "}
+              {audio.diagnostics.metrics.remoteCandidateType}
+            </p>
+            <div className="muted small">
+              transport {audio.diagnostics.metrics.protocol ?? "unknown"}
+              {audio.diagnostics.metrics.relayProtocol
+                ? ` · relay ${audio.diagnostics.metrics.relayProtocol}`
+                : ""}
+              <br />
+              RTT{" "}
+              {audio.diagnostics.metrics.currentRoundTripTimeMs === undefined
+                ? "—"
+                : `${audio.diagnostics.metrics.currentRoundTripTimeMs} ms`}
+              {" · "}jitter{" "}
+              {audio.diagnostics.metrics.jitterMs === undefined
+                ? "—"
+                : `${audio.diagnostics.metrics.jitterMs} ms`}
+              {" · "}packet loss{" "}
+              {packetLossPercent === undefined ? "—" : `${packetLossPercent}%`}
+            </div>
+          </div>
+
+          {audio.diagnostics.lastIceError && (
+            <p className="notice">
+              ICE diagnostic: {audio.diagnostics.lastIceError}
+            </p>
+          )}
+          {audio.diagnostics.failureReason && (
+            <p className="notice">
+              Last call failure: {audio.diagnostics.failureReason}
+            </p>
+          )}
+          <p className="muted small">
+            Diagnostics are local runtime observations. They are not room events and are not
+            written to SQLite.
+          </p>
+        </Card>
+
+        <Card>
+          <SectionTitle>ICE / TURN boundary</SectionTitle>
+          {!rtcConfig ? (
+            <p className="muted">ICE configuration has not arrived yet.</p>
+          ) : (
+            <>
+              <div className="grant-grid">
+                <Badge>STUN/TURN SERVERS {rtcConfig.iceServers.length}</Badge>
+                <Badge>TURN {hasTurn ? "CONFIGURED" : "ABSENT"}</Badge>
+                <Badge>CREDENTIALS {rtcConfig.credentialMode.toUpperCase()}</Badge>
+                <Badge>ICE POLICY {rtcConfig.iceTransportPolicy.toUpperCase()}</Badge>
+              </div>
+              <p className="muted small">
+                TURN relays media connectivity only. It is not a room participant, receives
+                no Commonline grants, and does not become durable room history.
+              </p>
+              {rtcConfig.expiresAt && (
+                <div className="muted small">
+                  Ephemeral TURN credential expiry: {rtcConfig.expiresAt}
+                </div>
+              )}
+            </>
           )}
         </Card>
       </section>
@@ -533,9 +649,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-f proves device-key possession before participant reuse, separates authentication from
-        room grants, supports recovery-key rotation, and makes ACCEPT_OUTCOME handoff an atomic,
-        durable, idempotent authority transition.
+        P0-g hardens real internet calling with authenticated ICE configuration, optional
+        TURN relay credentials, secure signaling defaults, call-path diagnostics, setup
+        timeouts, and cleanup after network failure. Media connectivity still grants no
+        Commonline authority.
       </footer>
     </main>
   );

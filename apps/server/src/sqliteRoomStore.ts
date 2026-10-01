@@ -28,9 +28,11 @@ import {
   PersistenceConflictError
 } from "./roomStore";
 
-export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-f.1" as const;
-const PREVIOUS_STORAGE_SCHEMA_VERSION = "p0-e.1";
-const PREVIOUS_WIRE_SCHEMA_VERSION = "p0-d.1";
+export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-g.1" as const;
+const MIGRATABLE_SCHEMA_PAIRS = new Set([
+  "p0-e.1|p0-d.1",
+  "p0-f.1|p0-f.1"
+]);
 
 type SqlValue = string | number | null;
 
@@ -272,8 +274,9 @@ export class SQLiteRoomStore
     const wireVersion = wireRow?.value;
 
     if (
-      storageVersion === PREVIOUS_STORAGE_SCHEMA_VERSION &&
-      wireVersion === PREVIOUS_WIRE_SCHEMA_VERSION
+      MIGRATABLE_SCHEMA_PAIRS.has(
+        `${String(storageVersion)}|${String(wireVersion)}`
+      )
     ) {
       this.db.exec("BEGIN IMMEDIATE;");
       try {

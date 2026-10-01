@@ -16,6 +16,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { IdentityService } from "./identityService";
 import { RoomService } from "./roomService";
+import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
 import {
   COMMONLINE_STORAGE_SCHEMA_VERSION,
@@ -128,7 +129,8 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "join_room" ||
       parsed.type === "submit_work" ||
       parsed.type === "accept_outcome" ||
-      parsed.type === "transfer_accept_authority"
+      parsed.type === "transfer_accept_authority" ||
+      parsed.type === "rtc_config_request"
     ) {
       return parsed as ClientMessage;
     }
@@ -392,6 +394,27 @@ wss.on("connection", (socket) => {
         code: "INVALID_SESSION",
         message: "This connection has been superseded by a newer session."
       });
+      return;
+    }
+
+    if (message.type === "rtc_config_request") {
+      try {
+        const rtcConfig = buildRtcConfig({
+          requestId: message.requestId,
+          roomId: session.roomId,
+          participantId: session.participantId
+        });
+        send(socket, rtcConfig);
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "INVALID_INTENT",
+          message:
+            error instanceof Error
+              ? error.message
+              : "RTC configuration is invalid."
+        });
+      }
       return;
     }
 

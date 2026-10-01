@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-f adds local cryptographic participant authentication, recovery-key rotation, and atomic ACCEPT_OUTCOME authority handoff on top of durable SQLite rooms.
+This repository is at the **P0 prototype** stage. P0-g hardens one-to-one internet calling with authenticated STUN/TURN configuration, secure signaling defaults, failure cleanup, and live WebRTC path diagnostics.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-f: a session must prove possession of its participant key before joining, while room authority remains independently grant-receipt based and transferable.
+The current executable rung is P0-g: authenticated humans can establish one-to-one WebRTC audio using direct ICE or configured TURN relay paths while connectivity telemetry remains ephemeral and separate from room authority.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), and [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md).
 
 ## Working name
 

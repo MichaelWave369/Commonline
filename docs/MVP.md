@@ -331,3 +331,48 @@ Initial enrollment is trust-on-first-use for the local prototype. It preserves p
 ### Next rung
 
 P0-g should harden real internet calling: TURN relay, ICE/connectivity diagnostics, peer/network failure cleanup, and secure deployment defaults. Identity and room authority no longer need to be redesigned just to make that call traverse ugly NATs.
+
+
+## P0-g — real internet media hardening
+
+P0-g hardens the one-to-one human WebRTC path without changing room authority.
+
+```text
+authenticated room session
+        ↓
+authenticated ICE config
+        ↓
+direct ICE path when possible
+        ↓
+TURN relay when required
+        ↓
+local runtime diagnostics
+```
+
+### Implemented in this rung
+
+- server-delivered authenticated ICE configuration
+- STUN URL configuration
+- TURN URL configuration
+- coturn REST-style ephemeral TURN credentials
+- static TURN credentials as an explicit demo fallback
+- automatic refresh before ephemeral TURN credentials expire
+- optional relay-only ICE policy for TURN verification
+- HTTPS/WSS deployment guardrails
+- call setup timeout
+- unanswered-call timeout
+- disconnect grace cleanup
+- ICE/peer failure cleanup
+- local microphone-ended cleanup
+- selected candidate-pair diagnostics
+- direct versus relay route classification
+- RTT, jitter, packet-loss and byte counters
+- ICE error visibility
+- local diagnostics remain outside durable room history
+- P0-f -> P0-g storage/wire metadata migration
+
+See [MEDIA_P0G.md](MEDIA_P0G.md).
+
+### Next rung
+
+After P0-g, the first one-to-one call has enough networking structure to justify choosing between multi-party media/SFU work and the separate Voice Kit / governed agent-speech track.
