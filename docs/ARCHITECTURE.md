@@ -325,3 +325,16 @@ mediasoup Consumers
 The policy catalog is ephemeral runtime configuration, not durable room truth. Source policies constrain which principal kinds may instantiate a source class and whether that source class is executable in the current rung.
 
 P0-k deliberately keeps future music, agent voice, and system-tone classes reserved instead of smuggling them into the human microphone path.
+
+
+## P0-l acceptance-observation plane
+
+P0-l adds browser-local Consumer statistics as observational test evidence. The stats surface reads mediasoup-client Consumer RTP counters and track state; it does not mutate Commonline group state, room versions, grants, or durable storage.
+
+The acceptance harness therefore sits outside the authority chain:
+
+```text
+Commonline authority → media routing → Consumer stats observer
+```
+
+The observer can fail without gaining permission to create or alter a route.
