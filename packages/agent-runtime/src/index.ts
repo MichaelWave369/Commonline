@@ -5,6 +5,7 @@ export interface SilentAgent {
   perform(work: WorkItem): Promise<Artifact>;
   composeVoiceProof(): Promise<string>;
   composeDirectedTurn(prompt: string): Promise<string>;
+  composeExchangeReply(transcript: string): Promise<string>;
   observeSharedTranscript(
     transcript: string
   ): Promise<{ wordCount: number; characterCount: number }>;
@@ -22,6 +23,20 @@ export class MockSilentAgent implements SilentAgent {
         .filter(Boolean).length,
       characterCount: transcript.length
     };
+  }
+
+  async composeExchangeReply(transcript: string): Promise<string> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const words = transcript
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+
+    return (
+      `Vessie replying only after a separate attention grant. I heard a bounded ${words}-word shared transcript. ` +
+      "This reply is tied to that exchange and does not create ongoing listening or speaking permission."
+    );
   }
 
   async composeDirectedTurn(prompt: string): Promise<string> {

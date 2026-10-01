@@ -1,6 +1,10 @@
 import type { MockSilentAgent } from "@commonline/agent-runtime";
-import type { ListeningShareStatus } from "@commonline/protocol";
+import type {
+  ConversationExchange,
+  ListeningShareStatus
+} from "@commonline/protocol";
 import { hasCapability } from "@commonline/room-core";
+import type { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import type { GroupMediaRegistry } from "./groupMediaRegistry";
 import type {
   LocalSpeechRecognizer,
@@ -23,6 +27,7 @@ export interface ListeningShareRuntimeResult {
   sampleCount: number;
   durationMs: number;
   observedWordCount: number;
+  exchange: ConversationExchange;
 }
 
 function decodePcm16(input: {
@@ -62,6 +67,7 @@ export class ListeningShareRuntime {
     private readonly service: RoomService,
     private readonly groupMedia: GroupMediaRegistry,
     private readonly leases: ListeningShareRegistry,
+    private readonly exchanges: ConversationExchangeRegistry,
     private readonly recognizer: LocalSpeechRecognizer,
     private readonly agent: MockSilentAgent
   ) {}
@@ -185,6 +191,14 @@ export class ListeningShareRuntime {
       const observation =
         await this.agent.observeSharedTranscript(transcript);
 
+      const exchange = this.exchanges.create({
+        roomId: input.roomId,
+        humanParticipantId: input.humanParticipantId,
+        agentParticipantId: input.agentParticipantId,
+        listeningShareId: input.shareId,
+        transcript
+      });
+
       input.onState?.("delivered");
 
       return {
@@ -192,7 +206,8 @@ export class ListeningShareRuntime {
         engine: recognized.engine,
         sampleCount: samples.length,
         durationMs: Math.round((samples.length / 16000) * 1000),
-        observedWordCount: observation.wordCount
+        observedWordCount: observation.wordCount,
+        exchange
       };
     } catch (error) {
       input.onState?.(

@@ -36,13 +36,13 @@ jobs:
       - run: npm ci
       - name: Install Chromium runtime
         run: npx playwright install --with-deps chromium
-      - name: Run P0-p live media + bounded listening acceptance
+      - name: Run P0-q heard-context + explicit reply acceptance
         run: npm run test:media-acceptance
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p0p-media-acceptance
+          name: p0q-media-acceptance
           path: |
             test-results
             playwright-report

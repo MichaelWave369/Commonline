@@ -10,6 +10,7 @@ import {
   type AttentionLease,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
+  type ExchangeResponseStatusMessage,
   type BootstrapAgentVoiceAuthorityMessage,
   type GroupMediaJoinMessage,
   type GroupMediaLeaveMessage,
@@ -33,6 +34,7 @@ import {
   type ListeningShareStatusMessage,
   type MediaSourceKind,
   type RequestedHumanRole,
+  type RequestExchangeResponseMessage,
   type RevokeAgentVoiceMessage,
   type RevokeAttentionLeaseMessage,
   type RevokeListeningShareMessage,
@@ -192,6 +194,8 @@ export function useCommonlineRoom() {
     useState<ListeningShareStatusMessage | null>(null);
   const [lastListeningShareResult, setLastListeningShareResult] =
     useState<ListeningShareResultMessage | null>(null);
+  const [lastExchangeResponseStatus, setLastExchangeResponseStatus] =
+    useState<ExchangeResponseStatusMessage | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
@@ -585,6 +589,7 @@ export function useCommonlineRoom() {
         if (message.lease.state === "active") {
           setLastListeningShareStatus(null);
           setLastListeningShareResult(null);
+          setLastExchangeResponseStatus(null);
         }
         setNotice(
           message.lease.state === "active"
@@ -609,6 +614,28 @@ export function useCommonlineRoom() {
         setNotice(
           `Vessie received one ephemeral local transcript via ${message.engine}.`
         );
+        return;
+      }
+
+      if (message.type === "exchange_response_status") {
+        setLastExchangeResponseStatus(message);
+        if (message.exchange) {
+          setLastListeningShareResult((current) =>
+            current &&
+            current.exchange.exchangeId === message.exchange?.exchangeId
+              ? { ...current, exchange: message.exchange }
+              : current
+          );
+        }
+        if (message.state === "failed") {
+          setNotice(
+            `Exchange reply failed: ${message.errorCode ?? "unknown reply error"}`
+          );
+        } else if (message.state === "completed") {
+          setNotice(
+            "Vessie completed the separately authorized reply to the heard exchange."
+          );
+        }
         return;
       }
 
@@ -726,6 +753,7 @@ export function useCommonlineRoom() {
       setListeningShareLease(null);
       setLastListeningShareStatus(null);
       setLastListeningShareResult(null);
+      setLastExchangeResponseStatus(null);
       rejectPendingSfu("Commonline signaling connection closed.");
       setRtcConfig(null);
       clearRtcConfigTimer();
@@ -1098,6 +1126,30 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const requestExchangeResponse = useCallback(
+    (
+      agentParticipantId: string,
+      exchangeId: string,
+      attentionLeaseId: string
+    ) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RequestExchangeResponseMessage = {
+        type: "request_exchange_response",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        exchangeId,
+        attentionLeaseId,
+        agentParticipantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const grantAttentionLease = useCallback(
     (agentParticipantId: string) => {
       if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -1300,6 +1352,7 @@ export function useCommonlineRoom() {
       setListeningShareLease(null);
       setLastListeningShareStatus(null);
       setLastListeningShareResult(null);
+      setLastExchangeResponseStatus(null);
     }
     return sent;
   }, [room, sendGroupMessage]);
@@ -1432,6 +1485,7 @@ export function useCommonlineRoom() {
     listeningShareLease,
     lastListeningShareStatus,
     lastListeningShareResult,
+    lastExchangeResponseStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -1450,6 +1504,7 @@ export function useCommonlineRoom() {
     grantListeningShare,
     revokeListeningShare,
     submitListeningShare,
+    requestExchangeResponse,
     grantAttentionLease,
     revokeAttentionLease,
     requestAgentTurn,
