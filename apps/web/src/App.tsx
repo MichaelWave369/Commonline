@@ -52,6 +52,7 @@ export function App() {
     resumeDelta,
     lastEvent,
     lastAcceptance,
+    lastExternalEffectStatus,
     lastAuthorityTransfer,
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
@@ -73,6 +74,7 @@ export function App() {
     disconnect,
     submitWork,
     acceptOutcome,
+    requestExternalEffect,
     transferAcceptAuthority,
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
@@ -262,7 +264,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-t END-TO-END EXPERIENCE PROOF</div>
+          <div className="eyebrow">COMMONLINE · P0-u EXTERNAL EFFECT FIREWALL</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -1642,9 +1644,44 @@ export function App() {
                       </Button>
                     )}
                     {acceptance && (
-                      <div className="muted small">
-                        receipt {acceptance.receiptId} · grant {acceptance.authorityGrantId}
-                      </div>
+                      <>
+                        <div className="muted small">
+                          receipt {acceptance.receiptId} · grant {acceptance.authorityGrantId}
+                        </div>
+                        <div className="button-row" style={{ marginTop: 10 }}>
+                          <Button
+                            data-testid="probe-external-effect"
+                            data-artifact-id={artifact.id}
+                            onClick={() => requestExternalEffect(artifact.id)}
+                            disabled={connection !== "connected"}
+                          >
+                            Probe external effect firewall
+                          </Button>
+                        </div>
+                        {lastExternalEffectStatus?.artifactId === artifact.id && (
+                          <div
+                            className="delta"
+                            data-testid="external-effect-status"
+                            data-effect-state={lastExternalEffectStatus.state}
+                            data-effect-error={lastExternalEffectStatus.errorCode ?? ""}
+                          >
+                            <strong>
+                              External effect {lastExternalEffectStatus.state}
+                            </strong>
+                            <div className="muted small">
+                              {lastExternalEffectStatus.kind} → {lastExternalEffectStatus.target}
+                              <br />
+                              authority {lastExternalEffectStatus.authorityGrantId}
+                              {lastExternalEffectStatus.errorCode && (
+                                <>
+                                  <br />
+                                  {lastExternalEffectStatus.errorCode}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </article>
                 );
@@ -1763,11 +1800,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-t proves the existing P0 pieces as one executable experience chain: two humans keep live
-        governed media flowing, bounded silent work completes during the episode, explicit acceptance
-        creates the durable outcome, and a later reconnect resumes from selected room state rather
-        than reconstructed speech. Human-value comparison against a voice + notes baseline remains a
-        separate pilot question, not something CI can manufacture.
+        P0-u makes the external-effect boundary executable without making the prototype effectful.
+        Accepting an artifact still grants no execution authority. The only effect adapter is a local
+        proof sink, and the executor refuses it unless the caller presents an exact active
+        EXECUTE_EXTERNAL_EFFECT grant. P0 issues no such grant by default.
       </footer>
     </main>
   );
