@@ -3,9 +3,11 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
   type AcceptOutcomeMessage,
+  type AgentTurnStatusMessage,
   type AgentVoiceGrantReceipt,
   type AgentVoiceRevocationReceipt,
   type AgentVoiceUtteranceStatusMessage,
+  type AttentionLease,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
   type BootstrapAgentVoiceAuthorityMessage,
@@ -24,9 +26,12 @@ import {
   type IdentityRecoverMessage,
   type JoinRoomMessage,
   type GrantAgentVoiceMessage,
+  type GrantAttentionLeaseMessage,
   type MediaSourceKind,
   type RequestedHumanRole,
   type RevokeAgentVoiceMessage,
+  type RevokeAttentionLeaseMessage,
+  type RequestAgentTurnMessage,
   type RequestAgentVoiceUtteranceMessage,
   type RoomEvent,
   type RoomSnapshot,
@@ -171,6 +176,10 @@ export function useCommonlineRoom() {
     useState<AgentVoiceRevocationReceipt | null>(null);
   const [lastAgentVoiceUtteranceStatus, setLastAgentVoiceUtteranceStatus] =
     useState<AgentVoiceUtteranceStatusMessage | null>(null);
+  const [attentionLease, setAttentionLease] =
+    useState<AttentionLease | null>(null);
+  const [lastAgentTurnStatus, setLastAgentTurnStatus] =
+    useState<AgentTurnStatusMessage | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
@@ -537,6 +546,28 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "attention_lease_state") {
+        setAttentionLease(message.lease);
+        setNotice(
+          message.lease.state === "active"
+            ? "One-turn attention lease granted."
+            : `Attention lease is now ${message.lease.state}.`
+        );
+        return;
+      }
+
+      if (message.type === "agent_turn_status") {
+        setLastAgentTurnStatus(message);
+        if (message.state === "failed") {
+          setNotice(
+            `Agent turn failed: ${message.errorCode ?? "unknown turn error"}`
+          );
+        } else if (message.state === "completed") {
+          setNotice("Vessie completed one attention-leased turn.");
+        }
+        return;
+      }
+
       if (message.type === "agent_work_status") {
         setAgentStatuses((current) => ({
           ...current,
@@ -646,6 +677,8 @@ export function useCommonlineRoom() {
       setRtcSessionInbox([]);
       setGroupRtcInbox([]);
       setGroupMediaState(null);
+      setAttentionLease(null);
+      setLastAgentTurnStatus(null);
       rejectPendingSfu("Commonline signaling connection closed.");
       setRtcConfig(null);
       clearRtcConfigTimer();
@@ -954,6 +987,67 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const grantAttentionLease = useCallback(
+    (agentParticipantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: GrantAttentionLeaseMessage = {
+        type: "grant_attention_lease",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        agentParticipantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const revokeAttentionLease = useCallback(
+    (leaseId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RevokeAttentionLeaseMessage = {
+        type: "revoke_attention_lease",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        leaseId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const requestAgentTurn = useCallback(
+    (
+      agentParticipantId: string,
+      attentionLeaseId: string,
+      prompt: string
+    ) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RequestAgentTurnMessage = {
+        type: "request_agent_turn",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        turnRequestId: `agent-turn-${crypto.randomUUID()}`,
+        attentionLeaseId,
+        agentParticipantId,
+        prompt
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const requestAgentVoiceUtterance = useCallback(
     (
       agentParticipantId: string,
@@ -1090,6 +1184,8 @@ export function useCommonlineRoom() {
     if (sent) {
       setGroupMediaState(null);
       setGroupRtcInbox([]);
+      setAttentionLease(null);
+      setLastAgentTurnStatus(null);
     }
     return sent;
   }, [room, sendGroupMessage]);
@@ -1217,6 +1313,8 @@ export function useCommonlineRoom() {
     lastAgentVoiceGrant,
     lastAgentVoiceRevocation,
     lastAgentVoiceUtteranceStatus,
+    attentionLease,
+    lastAgentTurnStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -1232,6 +1330,9 @@ export function useCommonlineRoom() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    grantAttentionLease,
+    revokeAttentionLease,
+    requestAgentTurn,
     requestAgentVoiceUtterance,
     openRtcCall,
     sendRtcSignal,

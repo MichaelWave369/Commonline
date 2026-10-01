@@ -1,5 +1,6 @@
 import type { MockSilentAgent } from "@commonline/agent-runtime";
 import type {
+  AgentTurnState,
   AgentVoiceUtteranceKind,
   AgentVoiceUtteranceState
 } from "@commonline/protocol";
@@ -8,6 +9,7 @@ import {
   hasCapability
 } from "@commonline/room-core";
 import { agentVoiceProfile } from "./agentVoicePolicy";
+import type { AttentionLeaseRegistry } from "./attentionLeaseRegistry";
 import type { GroupMediaRegistry } from "./groupMediaRegistry";
 import type { LocalVoiceRenderer } from "./localVoiceRenderer";
 import { mediaSourcePolicy } from "./mediaSourcePolicy";
@@ -36,6 +38,7 @@ export class AgentVoiceRuntime {
 
   constructor(
     private readonly service: RoomService,
+    private readonly attentionLeases: AttentionLeaseRegistry,
     private readonly groupMedia: GroupMediaRegistry,
     private readonly sfu: MediasoupSfuAdapter,
     private readonly renderer: LocalVoiceRenderer,
@@ -125,6 +128,152 @@ export class AgentVoiceRuntime {
     });
 
     return source;
+  }
+
+  async requestDirectedTurn(input: {
+    roomId: string;
+    actorParticipantId: string;
+    agentParticipantId: string;
+    attentionLeaseId: string;
+    turnRequestId: string;
+    prompt: string;
+    onState?: (
+      state: AgentTurnState,
+      metadata: {
+        voiceId: string;
+        sourceId?: string;
+        errorCode?: string;
+      }
+    ) => void;
+  }): Promise<AgentVoiceUtteranceResult> {
+    const room = this.service.getRoom(input.roomId);
+    if (!room) throw new Error("ROOM_NOT_FOUND");
+
+    const actor = room.participants.find(
+      (participant) =>
+        participant.id === input.actorParticipantId &&
+        participant.kind === "human"
+    );
+    if (!actor) {
+      throw new Error("NOT_AUTHORIZED");
+    }
+
+    const groupSession = this.groupMedia.currentForParticipant(
+      input.roomId,
+      input.actorParticipantId
+    );
+    if (!groupSession) {
+      throw new Error("VOICE_GROUP_MEDIA_REQUIRED");
+    }
+
+    const active = activeAgentVoiceGrant(
+      room,
+      input.agentParticipantId
+    );
+    if (!active) {
+      throw new Error("VOICE_GRANT_NOT_FOUND");
+    }
+
+    if (!this.renderer.status().ready) {
+      throw new Error("VOICE_RENDERER_UNAVAILABLE");
+    }
+
+    const prompt = input.prompt.trim();
+    if (prompt.length < 1 || prompt.length > 240) {
+      throw new Error("AGENT_TURN_PROMPT_INVALID");
+    }
+
+    const busyKey = `${input.roomId}::${input.agentParticipantId}`;
+    if (this.busy.has(busyKey)) {
+      throw new Error("AGENT_TURN_BUSY");
+    }
+
+    const consumed = this.attentionLeases.consume({
+      roomId: input.roomId,
+      leaseId: input.attentionLeaseId,
+      actorParticipantId: input.actorParticipantId,
+      agentParticipantId: input.agentParticipantId
+    });
+    if (!consumed.ok) {
+      throw new Error(consumed.code);
+    }
+
+    const utteranceId = `agent-turn-${crypto.randomUUID()}`;
+    this.busy.add(busyKey);
+
+    try {
+      input.onState?.("thinking", {
+        voiceId: active.voiceId
+      });
+
+      const source = await this.reconcile(input.roomId);
+      if (!source) {
+        throw new Error("VOICE_RENDERER_UNAVAILABLE");
+      }
+
+      const text = await this.agent.composeDirectedTurn(prompt);
+
+      input.onState?.("rendering", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId
+      });
+
+      const audio = await this.renderer.render({
+        voiceId: active.voiceId,
+        text
+      });
+
+      const session = this.groupMedia.current(input.roomId);
+      if (!session) throw new Error("VOICE_GROUP_MEDIA_REQUIRED");
+
+      const roomAfterRender = this.service.getRoom(input.roomId);
+      const stillActive = roomAfterRender
+        ? activeAgentVoiceGrant(
+            roomAfterRender,
+            input.agentParticipantId
+          )
+        : undefined;
+      if (
+        !stillActive ||
+        stillActive.voiceGrantId !== active.voiceGrantId
+      ) {
+        throw new Error("VOICE_GRANT_NOT_FOUND");
+      }
+
+      input.onState?.("speaking", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId
+      });
+
+      const sent = await this.sfu.injectDirectPcm16({
+        session,
+        ownerParticipantId: input.agentParticipantId,
+        sourceId: source.sourceId,
+        audio
+      });
+
+      input.onState?.("completed", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId
+      });
+
+      return {
+        utteranceId,
+        agentParticipantId: input.agentParticipantId,
+        voiceId: active.voiceId,
+        sourceId: source.sourceId,
+        durationMs: sent.durationMs
+      };
+    } catch (error) {
+      input.onState?.("failed", {
+        voiceId: active.voiceId,
+        errorCode:
+          error instanceof Error ? error.message : "VOICE_RENDERER_UNAVAILABLE"
+      });
+      throw error;
+    } finally {
+      this.busy.delete(busyKey);
+    }
   }
 
   async requestUtterance(input: {

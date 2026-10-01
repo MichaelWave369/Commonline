@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-n.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-o.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -320,6 +320,50 @@ export interface RequestAgentVoiceUtteranceMessage {
   voiceGrantId: string;
   authorityGrantId: string;
   utteranceKind: AgentVoiceUtteranceKind;
+}
+
+export type AttentionLeaseMode = "one-turn";
+export type AttentionLeaseState =
+  | "active"
+  | "consumed"
+  | "revoked"
+  | "expired";
+
+export interface AttentionLease {
+  leaseId: string;
+  roomId: string;
+  agentParticipantId: string;
+  grantedByParticipantId: string;
+  mode: AttentionLeaseMode;
+  state: AttentionLeaseState;
+  issuedAt: string;
+  expiresAt: string;
+  maxTurns: 1;
+  turnsConsumed: 0 | 1;
+}
+
+export interface GrantAttentionLeaseMessage {
+  type: "grant_attention_lease";
+  requestId: string;
+  roomId: string;
+  agentParticipantId: string;
+}
+
+export interface RevokeAttentionLeaseMessage {
+  type: "revoke_attention_lease";
+  requestId: string;
+  roomId: string;
+  leaseId: string;
+}
+
+export interface RequestAgentTurnMessage {
+  type: "request_agent_turn";
+  requestId: string;
+  roomId: string;
+  turnRequestId: string;
+  attentionLeaseId: string;
+  agentParticipantId: string;
+  prompt: string;
 }
 
 export interface RtcIceServerConfig {
@@ -653,6 +697,9 @@ export type ClientMessage =
   | GrantAgentVoiceMessage
   | RevokeAgentVoiceMessage
   | RequestAgentVoiceUtteranceMessage
+  | GrantAttentionLeaseMessage
+  | RevokeAttentionLeaseMessage
+  | RequestAgentTurnMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
   | RtcSignalClientMessage
@@ -767,6 +814,33 @@ export interface AgentVoiceUtteranceStatusMessage {
   errorCode?: string;
 }
 
+export interface AttentionLeaseStateMessage {
+  type: "attention_lease_state";
+  requestId: string;
+  roomId: string;
+  lease: AttentionLease;
+}
+
+export type AgentTurnState =
+  | "thinking"
+  | "rendering"
+  | "speaking"
+  | "completed"
+  | "failed";
+
+export interface AgentTurnStatusMessage {
+  type: "agent_turn_status";
+  requestId: string;
+  roomId: string;
+  turnRequestId: string;
+  attentionLeaseId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: AgentTurnState;
+  errorCode?: string;
+}
+
 export interface AgentWorkStatusMessage {
   type: "agent_work_status";
   roomId: string;
@@ -814,6 +888,13 @@ export type RejectionCode =
   | "VOICE_RENDERER_UNAVAILABLE"
   | "VOICE_UTTERANCE_BUSY"
   | "VOICE_GROUP_MEDIA_REQUIRED"
+  | "ATTENTION_LEASE_NOT_FOUND"
+  | "ATTENTION_LEASE_NOT_OWNED"
+  | "ATTENTION_LEASE_EXPIRED"
+  | "ATTENTION_LEASE_CONSUMED"
+  | "ATTENTION_LEASE_REVOKED"
+  | "AGENT_TURN_BUSY"
+  | "AGENT_TURN_PROMPT_INVALID"
   | "MEDIA_BUSY"
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
@@ -854,6 +935,8 @@ export type ServerMessage =
   | AgentVoiceGrantReceiptMessage
   | AgentVoiceRevocationReceiptMessage
   | AgentVoiceUtteranceStatusMessage
+  | AttentionLeaseStateMessage
+  | AgentTurnStatusMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage

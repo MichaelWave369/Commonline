@@ -123,7 +123,7 @@ async function evidence(locator: Locator) {
   };
 }
 
-test("P0-n proves live human and governed agent voice routing across three browsers", async ({
+test("P0-o proves live media plus one-turn governed agent attention across three browsers", async ({
   browser
 }, testInfo) => {
   const humans: HumanBrowser[] = [];
@@ -312,6 +312,130 @@ test("P0-n proves live human and governed agent voice routing across three brows
       charlieConsumerCount: await charlieVoiceConsumer.count()
     };
 
+    // P0-o: voice authority alone is not permission to take the floor.
+    // Alice grants one ephemeral turn, which must be consumed exactly once.
+    const beforeFirstTurnPackets = Number(
+      (await bobVoiceConsumer.getAttribute("data-packets-received")) ?? "0"
+    );
+
+    await alice.page.getByTestId("grant-attention-lease").click();
+    const attentionState = alice.page.getByTestId("attention-lease-state");
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "active"
+    );
+    const firstLeaseId =
+      (await attentionState.getAttribute("data-attention-lease-id")) ?? "";
+    expect(firstLeaseId).not.toBe("");
+
+    await alice.page
+      .getByTestId("agent-turn-prompt")
+      .fill("Confirm this one-turn attention lease was consumed.");
+    await alice.page.getByTestId("request-agent-turn").click();
+
+    await expect
+      .poll(
+        async () =>
+          (await alice.page
+            .getByTestId("agent-turn-status")
+            .getAttribute("data-turn-state")) ?? "",
+        {
+          timeout: 20_000,
+          message: "expected attention-leased Vessie turn to complete"
+        }
+      )
+      .toBe("completed");
+
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "consumed"
+    );
+    await expect
+      .poll(
+        async () =>
+          Number(
+            (await bobVoiceConsumer.getAttribute(
+              "data-packets-received"
+            )) ?? "0"
+          ),
+        {
+          timeout: 20_000,
+          message: "expected new RTP after the leased agent turn"
+        }
+      )
+      .toBeGreaterThan(beforeFirstTurnPackets);
+    await expect(charlieVoiceConsumer).toHaveCount(0);
+
+    const firstAttentionEvidence = {
+      leaseId: firstLeaseId,
+      leaseState:
+        await attentionState.getAttribute("data-attention-state"),
+      bob: await evidence(bobVoiceConsumer),
+      charlieConsumerCount: await charlieVoiceConsumer.count()
+    };
+
+    // A consumed lease cannot expose another request control. A new explicit
+    // human grant creates a distinct lease before Vessie may take another turn.
+    await expect(
+      alice.page.getByTestId("request-agent-turn")
+    ).toHaveCount(0);
+    await alice.page.getByTestId("grant-attention-lease").click();
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "active"
+    );
+    const secondLeaseId =
+      (await attentionState.getAttribute("data-attention-lease-id")) ?? "";
+    expect(secondLeaseId).not.toBe("");
+    expect(secondLeaseId).not.toBe(firstLeaseId);
+
+    const beforeSecondTurnPackets = Number(
+      (await bobVoiceConsumer.getAttribute("data-packets-received")) ?? "0"
+    );
+    await alice.page
+      .getByTestId("agent-turn-prompt")
+      .fill("Use the newly granted one-turn lease.");
+    await alice.page.getByTestId("request-agent-turn").click();
+
+    await expect
+      .poll(
+        async () =>
+          (await alice.page
+            .getByTestId("agent-turn-status")
+            .getAttribute("data-turn-state")) ?? "",
+        {
+          timeout: 20_000,
+          message: "expected second explicitly leased turn to complete"
+        }
+      )
+      .toBe("completed");
+    await expect(attentionState).toHaveAttribute(
+      "data-attention-state",
+      "consumed"
+    );
+    await expect
+      .poll(
+        async () =>
+          Number(
+            (await bobVoiceConsumer.getAttribute(
+              "data-packets-received"
+            )) ?? "0"
+          ),
+        {
+          timeout: 20_000,
+          message: "expected RTP only after a new attention lease"
+        }
+      )
+      .toBeGreaterThan(beforeSecondTurnPackets);
+
+    const secondAttentionEvidence = {
+      leaseId: secondLeaseId,
+      leaseState:
+        await attentionState.getAttribute("data-attention-state"),
+      bob: await evidence(bobVoiceConsumer),
+      charlieConsumerCount: await charlieVoiceConsumer.count()
+    };
+
     // Revocation must remove the source and downstream Consumer, not merely
     // hide a button while audio authority remains alive.
     await alice.page.getByTestId("revoke-vessie-voice").click();
@@ -319,7 +443,7 @@ test("P0-n proves live human and governed agent voice routing across three brows
     await expect(bobVoiceConsumer).toHaveCount(0);
 
     const report = {
-      schema: "p0-n.acceptance.1",
+      schema: "p0-o.acceptance.1",
       test: testInfo.title,
       generatedAt: new Date().toISOString(),
       matrix: {
@@ -335,6 +459,10 @@ test("P0-n proves live human and governed agent voice routing across three brows
       initialEvidence,
       finalEvidence,
       agentVoiceEvidence,
+      attentionTurns: {
+        first: firstAttentionEvidence,
+        second: secondAttentionEvidence
+      },
       agentVoiceRevoked: {
         sourceCount: await bobVoiceSource.count(),
         consumerCount: await bobVoiceConsumer.count()
@@ -343,7 +471,7 @@ test("P0-n proves live human and governed agent voice routing across three brows
 
     const reportPath = resolve(
       "test-results",
-      "p0n-media-acceptance.json"
+      "p0o-media-acceptance.json"
     );
     mkdirSync(dirname(reportPath), { recursive: true });
     writeFileSync(
@@ -352,7 +480,7 @@ test("P0-n proves live human and governed agent voice routing across three brows
       "utf8"
     );
 
-    await testInfo.attach("p0n-media-acceptance", {
+    await testInfo.attach("p0o-media-acceptance", {
       body: Buffer.from(JSON.stringify(report, null, 2)),
       contentType: "application/json"
     });

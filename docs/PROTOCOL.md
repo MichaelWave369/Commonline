@@ -373,3 +373,24 @@ The server broadcasts content-free `agent_voice_utterance_status` messages with 
 Agent voice becomes an executable media-source class in P0-n, but the source may only be instantiated by the trusted server-side agent voice runtime after the active voice grant and renderer identity are revalidated. Human `group_media_publish_source` remains unable to publish an agent-owned source.
 
 The live source uses mediasoup DirectTransport and PCMU RTP injection. Listener Consumers still require the ordinary exact source subscription plus `RECEIVE_MEDIA`.
+
+
+## P0-o attention lease and directed-turn profile
+
+Wire schema: `p0-o.1`.
+
+P0-o adds three ephemeral client intents:
+
+```text
+grant_attention_lease
+revoke_attention_lease
+request_agent_turn
+```
+
+The first lease mode is `one-turn`. A lease is scoped to one room, one target agent, and the human participant who granted it. It has a short TTL, is not durable, and may be consumed exactly once.
+
+`request_agent_turn` binds a stable turn request ID, the exact attention lease ID, the target agent, and a bounded prompt. The server refuses the turn if the lease is missing, owned by somebody else, expired, revoked, or already consumed.
+
+Successful lease state changes are returned through `attention_lease_state`. Directed turn progress uses the content-free `agent_turn_status` message with thinking, rendering, speaking, completed, or failed state.
+
+P0-o does not add prompts or responses to room history. Voice authority and listener subscriptions remain separate requirements.

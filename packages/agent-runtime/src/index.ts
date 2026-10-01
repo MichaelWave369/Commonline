@@ -4,10 +4,26 @@ export interface SilentAgent {
   readonly name: string;
   perform(work: WorkItem): Promise<Artifact>;
   composeVoiceProof(): Promise<string>;
+  composeDirectedTurn(prompt: string): Promise<string>;
 }
 
 export class MockSilentAgent implements SilentAgent {
   constructor(public readonly name: string) {}
+
+  async composeDirectedTurn(prompt: string): Promise<string> {
+    await new Promise((resolve) => setTimeout(resolve, 140));
+
+    const wordCount = prompt
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+
+    return (
+      `Vessie responding to one directed turn. I received a ${wordCount}-word request. ` +
+      "Commonline consumed exactly one attention lease for this reply. " +
+      "The prompt itself remains ephemeral in this rung."
+    );
+  }
 
   async composeVoiceProof(): Promise<string> {
     await new Promise((resolve) => setTimeout(resolve, 120));

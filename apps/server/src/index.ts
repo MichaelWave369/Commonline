@@ -2,8 +2,10 @@ import { createServer } from "node:http";
 import { MockSilentAgent } from "@commonline/agent-runtime";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
+  type AgentTurnStatusMessage,
   type AgentVoiceUtteranceStatusMessage,
   type AgentWorkStatusMessage,
+  type AttentionLeaseStateMessage,
   type ClientMessage,
   type IntentRejectedMessage,
   type MediaSourceKind,
@@ -13,9 +15,14 @@ import {
   type RtcSignalRelayMessage,
   type ServerMessage
 } from "@commonline/protocol";
-import { hasCapability, SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
+import {
+  activeAgentVoiceGrant,
+  hasCapability,
+  SILENT_AGENT_PARTICIPANT_ID
+} from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { agentVoiceProfile } from "./agentVoicePolicy";
+import { AttentionLeaseRegistry } from "./attentionLeaseRegistry";
 import { AgentVoiceRuntime } from "./agentVoiceRuntime";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
@@ -71,6 +78,7 @@ const httpServer = createServer((request, response) => {
         mediaSourcePolicy: "p0-n.1",
         agentVoiceAuthority: "p0-m.1",
         agentVoiceRenderer: voiceRenderer.status(),
+        attentionLeases: "ephemeral-one-turn-p0-o",
         sfu: sfu.status()
       })
     );
@@ -85,8 +93,10 @@ const roomSockets = new Map<string, Set<WebSocket>>();
 const sessions = new SessionRegistry<WebSocket>();
 const mediaSessions = new MediaSessionRegistry();
 const groupMedia = new GroupMediaRegistry();
+const attentionLeases = new AttentionLeaseRegistry();
 const agentVoiceRuntime = new AgentVoiceRuntime(
   service,
+  attentionLeases,
   groupMedia,
   sfu,
   voiceRenderer,
@@ -207,6 +217,62 @@ function voiceFailureCode(error: unknown) {
   return "VOICE_RENDERER_UNAVAILABLE" as const;
 }
 
+function turnFailureCode(error: unknown) {
+  const code =
+    error instanceof Error ? error.message : String(error);
+
+  if (
+    code === "ROOM_NOT_FOUND" ||
+    code === "NOT_AUTHORIZED" ||
+    code === "VOICE_GRANT_NOT_FOUND" ||
+    code === "VOICE_RENDERER_UNAVAILABLE" ||
+    code === "VOICE_GROUP_MEDIA_REQUIRED" ||
+    code === "ATTENTION_LEASE_NOT_FOUND" ||
+    code === "ATTENTION_LEASE_NOT_OWNED" ||
+    code === "ATTENTION_LEASE_EXPIRED" ||
+    code === "ATTENTION_LEASE_CONSUMED" ||
+    code === "ATTENTION_LEASE_REVOKED" ||
+    code === "AGENT_TURN_BUSY" ||
+    code === "AGENT_TURN_PROMPT_INVALID"
+  ) {
+    return code;
+  }
+
+  return "VOICE_RENDERER_UNAVAILABLE" as const;
+}
+
+function sendAttentionLeaseState(
+  socket: WebSocket,
+  requestId: string,
+  roomId: string,
+  lease: AttentionLeaseStateMessage["lease"]
+) {
+  send(socket, {
+    type: "attention_lease_state",
+    requestId,
+    roomId,
+    lease
+  });
+}
+
+function broadcastAgentTurnStatus(input: {
+  requestId: string;
+  roomId: string;
+  turnRequestId: string;
+  attentionLeaseId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: AgentTurnStatusMessage["state"];
+  errorCode?: string;
+}) {
+  const message: AgentTurnStatusMessage = {
+    type: "agent_turn_status",
+    ...input
+  };
+  broadcast(input.roomId, message);
+}
+
 function broadcastVoiceStatus(input: {
   requestId: string;
   roomId: string;
@@ -324,11 +390,42 @@ function parseMessage(raw: RawData): ClientMessage | null {
     }
 
     if (
+      parsed.type === "grant_attention_lease" &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "revoke_attention_lease" &&
+      typeof parsed.leaseId === "string" &&
+      parsed.leaseId.length > 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
       parsed.type === "group_media_publish_source" &&
       isMediaSourceKind(parsed.kind) &&
       typeof parsed.label === "string" &&
       parsed.label.trim().length > 0 &&
       parsed.label.length <= 160
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "request_agent_turn" &&
+      typeof parsed.turnRequestId === "string" &&
+      parsed.turnRequestId.length > 0 &&
+      typeof parsed.attentionLeaseId === "string" &&
+      parsed.attentionLeaseId.length > 0 &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0 &&
+      typeof parsed.prompt === "string" &&
+      parsed.prompt.trim().length > 0 &&
+      parsed.prompt.length <= 240
     ) {
       return parsed as ClientMessage;
     }
@@ -525,7 +622,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-n fields."
+          message: "join_room is missing required P0-o fields."
         });
         return;
       }
@@ -699,6 +796,10 @@ wss.on("connection", (socket) => {
         roomId: session.roomId,
         participantId: session.participantId
       });
+      attentionLeases.removeParticipant(
+        session.roomId,
+        session.participantId
+      );
       sfu.closeParticipant(
         session.roomId,
         session.participantId
@@ -1440,6 +1541,144 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "grant_attention_lease") {
+      const actorParticipantId = session.participantId;
+      const room = service.getRoom(session.roomId);
+      const target = room?.participants.find(
+        (participant) =>
+          participant.id === message.agentParticipantId &&
+          participant.kind === "agent"
+      );
+      const currentGroup = groupMedia.currentForParticipant(
+        session.roomId,
+        actorParticipantId
+      );
+      const voiceGrant = room
+        ? activeAgentVoiceGrant(room, message.agentParticipantId)
+        : undefined;
+
+      if (!target || !currentGroup) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "VOICE_GROUP_MEDIA_REQUIRED",
+          message:
+            "Grant attention only while you are in the live group media session with the target agent available."
+        });
+        return;
+      }
+
+      if (!voiceGrant) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "VOICE_GRANT_NOT_FOUND",
+          message:
+            "The target agent needs an active voice grant before attention can be leased."
+        });
+        return;
+      }
+
+      const lease = attentionLeases.grant({
+        roomId: session.roomId,
+        agentParticipantId: message.agentParticipantId,
+        grantedByParticipantId: actorParticipantId
+      });
+      sendAttentionLeaseState(
+        socket,
+        message.requestId,
+        session.roomId,
+        lease
+      );
+      return;
+    }
+
+    if (message.type === "revoke_attention_lease") {
+      const revoked = attentionLeases.revoke({
+        roomId: session.roomId,
+        leaseId: message.leaseId,
+        actorParticipantId: session.participantId
+      });
+
+      if (!revoked.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: revoked.code,
+          message: revoked.message
+        });
+        return;
+      }
+
+      sendAttentionLeaseState(
+        socket,
+        message.requestId,
+        session.roomId,
+        revoked.lease
+      );
+      return;
+    }
+
+    if (message.type === "request_agent_turn") {
+      const actorParticipantId = session.participantId;
+      const actorRoomId = session.roomId;
+
+      try {
+        await agentVoiceRuntime.requestDirectedTurn({
+          roomId: actorRoomId,
+          actorParticipantId,
+          agentParticipantId: message.agentParticipantId,
+          attentionLeaseId: message.attentionLeaseId,
+          turnRequestId: message.turnRequestId,
+          prompt: message.prompt,
+          onState: (state, metadata) => {
+            broadcastAgentTurnStatus({
+              requestId: message.requestId,
+              roomId: actorRoomId,
+              turnRequestId: message.turnRequestId,
+              attentionLeaseId: message.attentionLeaseId,
+              agentParticipantId: message.agentParticipantId,
+              voiceId: metadata.voiceId,
+              sourceId: metadata.sourceId,
+              state,
+              errorCode: metadata.errorCode
+            });
+          }
+        });
+
+        const consumed = attentionLeases.get(
+          message.attentionLeaseId
+        );
+        if (consumed) {
+          sendAttentionLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            consumed
+          );
+        }
+      } catch (error) {
+        const lease = attentionLeases.get(
+          message.attentionLeaseId
+        );
+        if (lease) {
+          sendAttentionLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            lease
+          );
+        }
+
+        reject(socket, {
+          requestId: message.requestId,
+          code: turnFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Agent turn failed."
+        });
+      }
+      return;
+    }
+
     if (message.type === "request_agent_voice_utterance") {
       const actorParticipantId = session.participantId;
       const actorRoomId = session.roomId;
@@ -1735,6 +1974,11 @@ wss.on("connection", (socket) => {
       socket
     );
     if (!wasCurrent) return;
+
+    attentionLeases.removeParticipant(
+      session.roomId,
+      session.participantId
+    );
 
     for (const ended of mediaSessions.endForParticipant(
       session.roomId,

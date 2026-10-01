@@ -390,3 +390,28 @@ The default renderer is disabled. Piper is an optional local CLI adapter backed 
 The mediasoup Router supports Opus for browser microphone/audio producers and PCMU for server-local agent audio. Agent voice does not require the agent to masquerade as a human WebRTC participant.
 
 Renderer status and utterance progress are ephemeral. Voice authority remains durable and upstream.
+
+
+## P0-o attention plane
+
+P0-o adds a memory-only attention registry between durable voice authority and conversational agent turns.
+
+```text
+durable AgentVoiceGrantReceipt
+        +
+ephemeral AttentionLease
+        ↓
+one directed agent turn
+        ↓
+existing local renderer
+        ↓
+existing agent-voice source
+        ↓
+existing explicit subscriptions
+```
+
+The attention registry is not part of SQLite, room versions, or durable event history. A human leaving live group media or losing the current session removes that human's leases.
+
+Lease consumption occurs inside the voice runtime after room, voice-grant, renderer, prompt, group-media, and busy-state checks. This prevents an internal caller from bypassing the attention boundary while still avoiding unnecessary lease consumption for obviously invalid requests.
+
+P0-o keeps prompts and generated turn text out of the status plane and out of durable room state.
