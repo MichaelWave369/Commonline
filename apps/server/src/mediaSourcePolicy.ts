@@ -4,13 +4,13 @@ import type {
   PrincipalKind
 } from "@commonline/protocol";
 
-export const MEDIA_SOURCE_POLICY_VERSION = "p0-k.1";
+export const MEDIA_SOURCE_POLICY_VERSION = "p0-m.1";
 
 const policies: MediaSourcePolicy[] = [
   {
-    policyId: "source-policy/human-microphone/p0-k.1",
+    policyId: "source-policy/human-microphone/p0-m.1",
     kind: "human-microphone",
-    requiredCapability: "SPEAK",
+    requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
     audienceMode: "explicit-subscription",
     retention: "ephemeral",
@@ -19,9 +19,9 @@ const policies: MediaSourcePolicy[] = [
     executionState: "executable"
   },
   {
-    policyId: "source-policy/sound-effect/p0-k.1",
+    policyId: "source-policy/sound-effect/p0-m.1",
     kind: "sound-effect",
-    requiredCapability: "SPEAK",
+    requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
     audienceMode: "explicit-subscription",
     retention: "ephemeral",
@@ -30,9 +30,9 @@ const policies: MediaSourcePolicy[] = [
     executionState: "executable"
   },
   {
-    policyId: "source-policy/shared-music/p0-k.1",
+    policyId: "source-policy/shared-music/p0-m.1",
     kind: "shared-music",
-    requiredCapability: "SPEAK",
+    requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
     audienceMode: "explicit-subscription",
     retention: "ephemeral",
@@ -41,9 +41,9 @@ const policies: MediaSourcePolicy[] = [
     executionState: "reserved"
   },
   {
-    policyId: "source-policy/agent-voice/p0-k.1",
+    policyId: "source-policy/agent-voice/p0-m.1",
     kind: "agent-voice",
-    requiredCapability: "SPEAK",
+    requiredAuthority: "AGENT_VOICE_GRANT",
     allowedPublisherKinds: ["agent"],
     audienceMode: "explicit-subscription",
     retention: "ephemeral",
@@ -52,9 +52,9 @@ const policies: MediaSourcePolicy[] = [
     executionState: "reserved"
   },
   {
-    policyId: "source-policy/system-tone/p0-k.1",
+    policyId: "source-policy/system-tone/p0-m.1",
     kind: "system-tone",
-    requiredCapability: "SPEAK",
+    requiredAuthority: "SERVICE_POLICY",
     allowedPublisherKinds: ["service"],
     audienceMode: "explicit-subscription",
     retention: "ephemeral",
@@ -91,7 +91,7 @@ export type MediaSourcePolicyDecision =
 export function evaluateMediaSourcePolicy(input: {
   kind: MediaSourceKind;
   publisherKind: PrincipalKind;
-  hasRequiredCapability: boolean;
+  hasRequiredAuthority: boolean;
 }): MediaSourcePolicyDecision {
   const policy = mediaSourcePolicy(input.kind);
 
@@ -107,7 +107,7 @@ export function evaluateMediaSourcePolicy(input: {
     return {
       ok: false,
       code: "MEDIA_SOURCE_KIND_UNSUPPORTED",
-      message: `${input.kind} is reserved by P0-k policy but is not executable yet.`
+      message: `${input.kind} is reserved by P0-m policy but is not executable yet.`
     };
   }
 
@@ -120,12 +120,12 @@ export function evaluateMediaSourcePolicy(input: {
     };
   }
 
-  if (!input.hasRequiredCapability) {
+  if (!input.hasRequiredAuthority) {
     return {
       ok: false,
       code: "MEDIA_SOURCE_POLICY_DENIED",
       message:
-        `${input.kind} requires an active ${policy.requiredCapability} grant.`
+        `${input.kind} requires active ${policy.requiredAuthority} authority.`
     };
   }
 
