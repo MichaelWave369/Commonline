@@ -588,3 +588,30 @@ Implemented:
 - three-browser live agent voice RTP acceptance
 
 See [LOCAL_AGENT_VOICE_P0N.md](LOCAL_AGENT_VOICE_P0N.md).
+
+
+## P0-o — ephemeral attention lease + agent turn-taking
+
+P0-o separates permission to use Vessie's voice from permission to take one conversational turn.
+
+Implemented:
+
+- memory-only one-turn AttentionLease
+- 120-second default TTL
+- lease ownership bound to granting human
+- one active lease per human/agent pair
+- exact once-only consumption
+- explicit human revocation
+- automatic expiry
+- lease cleanup on live-media leave/session loss
+- bounded directed prompt
+- agent-authored bounded response
+- content-free thinking/rendering/speaking/completed/failed status
+- voice-grant revalidation
+- existing subscriber-only RTP delivery
+- no STT or ambient listening
+- no durable prompts/replies
+- P0-n -> P0-o wire/storage metadata migration
+- live three-browser lease/RTP acceptance
+
+See [ATTENTION_LEASE_P0O.md](ATTENTION_LEASE_P0O.md).
