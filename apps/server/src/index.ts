@@ -7,6 +7,7 @@ import {
   type AgentWorkStatusMessage,
   type AttentionLeaseStateMessage,
   type ClientMessage,
+  type ExchangeResponseStatusMessage,
   type ListeningShareLeaseStateMessage,
   type ListeningShareStatusMessage,
   type IntentRejectedMessage,
@@ -26,6 +27,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { agentVoiceProfile } from "./agentVoicePolicy";
 import { AttentionLeaseRegistry } from "./attentionLeaseRegistry";
 import { AgentVoiceRuntime } from "./agentVoiceRuntime";
+import { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
@@ -86,6 +88,7 @@ const httpServer = createServer((request, response) => {
         agentVoiceRenderer: voiceRenderer.status(),
         attentionLeases: "ephemeral-one-turn-p0-o",
         governedListening: "bounded-push-share-p0-p",
+        explicitExchangeBinding: "heard-plus-attention-p0-q",
         speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })
@@ -103,9 +106,11 @@ const mediaSessions = new MediaSessionRegistry();
 const groupMedia = new GroupMediaRegistry();
 const attentionLeases = new AttentionLeaseRegistry();
 const listeningShares = new ListeningShareRegistry();
+const conversationExchanges = new ConversationExchangeRegistry();
 const agentVoiceRuntime = new AgentVoiceRuntime(
   service,
   attentionLeases,
+  conversationExchanges,
   groupMedia,
   sfu,
   voiceRenderer,
@@ -115,6 +120,7 @@ const listeningShareRuntime = new ListeningShareRuntime(
   service,
   groupMedia,
   listeningShares,
+  conversationExchanges,
   speechRecognizer,
   agent
 );
@@ -264,6 +270,54 @@ function broadcastListeningStatus(input: {
 }) {
   const message: ListeningShareStatusMessage = {
     type: "listening_share_status",
+    ...input
+  };
+  broadcast(input.roomId, message);
+}
+
+function exchangeFailureCode(error: unknown) {
+  const code =
+    error instanceof Error ? error.message : String(error);
+
+  if (
+    code === "ROOM_NOT_FOUND" ||
+    code === "NOT_AUTHORIZED" ||
+    code === "VOICE_GRANT_NOT_FOUND" ||
+    code === "VOICE_RENDERER_UNAVAILABLE" ||
+    code === "VOICE_GROUP_MEDIA_REQUIRED" ||
+    code === "ATTENTION_LEASE_NOT_FOUND" ||
+    code === "ATTENTION_LEASE_NOT_OWNED" ||
+    code === "ATTENTION_LEASE_EXPIRED" ||
+    code === "ATTENTION_LEASE_CONSUMED" ||
+    code === "ATTENTION_LEASE_REVOKED" ||
+    code === "AGENT_TURN_BUSY" ||
+    code === "EXCHANGE_NOT_FOUND" ||
+    code === "EXCHANGE_NOT_OWNED" ||
+    code === "EXCHANGE_EXPIRED" ||
+    code === "EXCHANGE_ALREADY_RESPONDED" ||
+    code === "EXCHANGE_BUSY"
+  ) {
+    return code;
+  }
+
+  return "VOICE_RENDERER_UNAVAILABLE" as const;
+}
+
+function broadcastExchangeResponseStatus(input: {
+  requestId: string;
+  roomId: string;
+  exchangeId: string;
+  attentionLeaseId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: ExchangeResponseStatusMessage["state"];
+  errorCode?: string;
+  exchange?: ExchangeResponseStatusMessage["exchange"];
+}) {
+  const message: ExchangeResponseStatusMessage = {
+    type: "exchange_response_status",
     ...input
   };
   broadcast(input.roomId, message);
@@ -491,6 +545,18 @@ function parseMessage(raw: RawData): ClientMessage | null {
       typeof parsed.pcm16Base64 === "string" &&
       parsed.pcm16Base64.length > 0 &&
       parsed.pcm16Base64.length <= 220000
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "request_exchange_response" &&
+      typeof parsed.exchangeId === "string" &&
+      parsed.exchangeId.length > 0 &&
+      typeof parsed.attentionLeaseId === "string" &&
+      parsed.attentionLeaseId.length > 0 &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0
     ) {
       return parsed as ClientMessage;
     }
@@ -728,7 +794,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-p fields."
+          message: "join_room is missing required P0-q fields."
         });
         return;
       }
@@ -907,6 +973,10 @@ wss.on("connection", (socket) => {
         session.participantId
       );
       listeningShares.removeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      conversationExchanges.removeParticipant(
         session.roomId,
         session.participantId
       );
@@ -1788,7 +1858,8 @@ wss.on("connection", (socket) => {
           transcript: result.transcript,
           engine: result.engine,
           sampleCount: result.sampleCount,
-          durationMs: result.durationMs
+          durationMs: result.durationMs,
+          exchange: result.exchange
         });
       } catch (error) {
         const lease = listeningShares.get(message.leaseId);
@@ -1808,6 +1879,70 @@ wss.on("connection", (socket) => {
             error instanceof Error
               ? error.message
               : "Bounded listening share failed."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "request_exchange_response") {
+      const actorParticipantId = session.participantId;
+      const actorRoomId = session.roomId;
+
+      try {
+        await agentVoiceRuntime.requestExchangeResponse({
+          roomId: actorRoomId,
+          actorParticipantId,
+          agentParticipantId: message.agentParticipantId,
+          exchangeId: message.exchangeId,
+          attentionLeaseId: message.attentionLeaseId,
+          onState: (state, metadata) => {
+            broadcastExchangeResponseStatus({
+              requestId: message.requestId,
+              roomId: actorRoomId,
+              exchangeId: message.exchangeId,
+              attentionLeaseId: message.attentionLeaseId,
+              humanParticipantId: actorParticipantId,
+              agentParticipantId: message.agentParticipantId,
+              voiceId: metadata.voiceId,
+              sourceId: metadata.sourceId,
+              state,
+              errorCode: metadata.errorCode,
+              exchange: metadata.exchange
+            });
+          }
+        });
+
+        const consumedAttention = attentionLeases.get(
+          message.attentionLeaseId
+        );
+        if (consumedAttention) {
+          sendAttentionLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            consumedAttention
+          );
+        }
+      } catch (error) {
+        const attention = attentionLeases.get(
+          message.attentionLeaseId
+        );
+        if (attention) {
+          sendAttentionLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            attention
+          );
+        }
+
+        reject(socket, {
+          requestId: message.requestId,
+          code: exchangeFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Exchange-bound agent response failed."
         });
       }
       return;
