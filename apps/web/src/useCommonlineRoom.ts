@@ -677,6 +677,8 @@ export function useCommonlineRoom() {
       setRtcSessionInbox([]);
       setGroupRtcInbox([]);
       setGroupMediaState(null);
+      setAttentionLease(null);
+      setLastAgentTurnStatus(null);
       rejectPendingSfu("Commonline signaling connection closed.");
       setRtcConfig(null);
       clearRtcConfigTimer();
@@ -1182,6 +1184,8 @@ export function useCommonlineRoom() {
     if (sent) {
       setGroupMediaState(null);
       setGroupRtcInbox([]);
+      setAttentionLease(null);
+      setLastAgentTurnStatus(null);
     }
     return sent;
   }, [room, sendGroupMessage]);
