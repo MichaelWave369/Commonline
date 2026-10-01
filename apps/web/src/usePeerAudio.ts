@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import type {
   RtcConfigMessage,
   RtcSignalPayload,
@@ -119,7 +119,7 @@ export function usePeerAudio({
     metrics: emptyMetrics
   }));
 
-  const clearTimer = useCallback((ref: React.MutableRefObject<number | null>) => {
+  const clearTimer = useCallback((ref: MutableRefObject<number | null>) => {
     if (ref.current !== null) {
       window.clearTimeout(ref.current);
       window.clearInterval(ref.current);
