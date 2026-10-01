@@ -640,3 +640,28 @@ Implemented:
 - three-browser privacy acceptance
 
 See [GOVERNED_LISTENING_P0P.md](GOVERNED_LISTENING_P0P.md).
+
+
+## P0-q — explicit hear-to-reply exchange binding
+
+Implemented:
+
+- ephemeral ConversationExchange
+- private short-lived transcript binding
+- public exchange view without transcript content
+- heard/responded/expired states
+- 120-second default exchange TTL
+- newer heard exchange supersedes older unheard reply opportunity
+- no automatic reply after listening
+- exact human ownership check
+- exact target-agent check
+- exact attention lease binding
+- active voice-grant revalidation
+- agent-authored reply from exact heard transcript
+- successful RTP required before exchange becomes responded
+- failed response releases exchange but does not restore attention
+- transcript/reply remain non-durable
+- P0-p -> P0-q wire/storage metadata migration
+- three-browser no-RTP-before-attention acceptance
+
+See [EXPLICIT_EXCHANGE_P0Q.md](EXPLICIT_EXCHANGE_P0Q.md).
