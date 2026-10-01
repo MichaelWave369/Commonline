@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Capability } from "@commonline/protocol";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
-import { useGroupAudio } from "./useGroupAudio";
+import { useSfuGroupAudio } from "./useSfuGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
 
 function GroupRemoteAudio({
@@ -54,7 +54,6 @@ export function App() {
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
-    groupRtcInbox,
     groupMediaState,
     rtcConfig,
     notice,
@@ -71,8 +70,7 @@ export function App() {
     unpublishGroupSource,
     subscribeGroupSource,
     unsubscribeGroupSource,
-    sendGroupRtcSignal,
-    consumeGroupRtcSignal,
+    requestSfu,
     consumeRtcSession,
     consumeRtcSignal
   } = roomSession;
@@ -88,20 +86,17 @@ export function App() {
     sendRtcSignal
   });
 
-  const group = useGroupAudio({
+  const group = useSfuGroupAudio({
     participantId,
     roomConnected: connection === "connected",
-    rtcConfig,
     groupState: groupMediaState,
-    signalInbox: groupRtcInbox,
-    consumeSignal: consumeGroupRtcSignal,
+    requestSfu,
     joinGroup: joinGroupMedia,
     leaveGroup: leaveGroupMedia,
     publishMicrophone: publishGroupMicrophone,
     unpublishSource: unpublishGroupSource,
     subscribeSource: subscribeGroupSource,
-    unsubscribeSource: unsubscribeGroupSource,
-    sendSignal: sendGroupRtcSignal
+    unsubscribeSource: unsubscribeGroupSource
   });
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -213,8 +208,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-i MULTIPARTY MEDIA BOUNDARY</div>
-          <h1>{room?.purpose ?? "Route identified human audio sources without collapsing authority"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-j GOVERNED MEDIASOUP SFU</div>
+          <h1>{room?.purpose ?? "Enforce identified source subscriptions at the media router"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -517,9 +512,9 @@ export function App() {
           {!group.joined ? (
             <>
               <p className="muted">
-                P0-i admits up to three human participants to one ephemeral media
-                session. The executable adapter is mesh-p0 behind the same
-                source/subscription boundary a future SFU can implement.
+                P0-j routes up to three human microphone sources through a real
+                mediasoup SFU. Commonline still owns membership, grants, source
+                identity, and subscriptions; mediasoup only forwards authorized media.
               </p>
               <Button
                 onClick={group.join}
@@ -545,14 +540,17 @@ export function App() {
                 <Badge>
                   MIC {group.ownSource ? (group.muted ? "MUTED" : "PUBLISHED") : "OFF"}
                 </Badge>
-                <Badge>PEER LINKS {group.plans.length}</Badge>
+                <Badge>SFU {group.sfuReady ? "READY" : "LOADING"}</Badge>
+                <Badge>SEND {group.sendState.toUpperCase()}</Badge>
+                <Badge>RECV {group.recvState.toUpperCase()}</Badge>
+                <Badge>CONSUMERS {group.consumerCount}</Badge>
               </div>
 
               <div className="button-row">
                 {!group.ownSource ? (
                   <Button
                     onClick={() => void group.enableMicrophone()}
-                    disabled={!canSpeak || !audio.rtcReady}
+                    disabled={!canSpeak || !group.sfuReady}
                   >
                     Publish microphone
                   </Button>
@@ -630,22 +628,22 @@ export function App() {
 
       {group.joined && Object.keys(group.remoteStreams).length > 0 && (
         <section className="hero-grid">
-          {Object.entries(group.remoteStreams).map(([peerId, stream]) => {
+          {Object.entries(group.remoteStreams).map(([sourceId, stream]) => {
+            const source = groupMediaState?.sources.find(
+              (candidate) => candidate.sourceId === sourceId
+            );
             const participant = room?.participants.find(
-              (candidate) => candidate.id === peerId
+              (candidate) =>
+                candidate.id === source?.ownerParticipantId
             );
             return (
-              <Card key={peerId}>
+              <Card key={sourceId}>
                 <SectionTitle>
-                  Group audio · {participant?.name ?? peerId}
+                  SFU audio · {participant?.name ?? source?.ownerParticipantId ?? sourceId}
                 </SectionTitle>
                 <GroupRemoteAudio
                   stream={stream}
-                  label={
-                    group.peerStates[peerId]
-                      ? `peer ${group.peerStates[peerId]}`
-                      : "peer negotiating"
-                  }
+                  label={`governed source ${sourceId}`}
                 />
               </Card>
             );
@@ -873,9 +871,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-i proves a three-human source/subscription model with an executable mesh-p0
-        adapter behind an SFU-shaped boundary. Group media stays ephemeral, agents still
-        receive no live audio, and durable undertaking state remains independent.
+        P0-j replaces the cooperative group mesh with a real mediasoup SFU. The server
+        creates producers only for SPEAK-authorized published sources and consumers only
+        for RECEIVE_MEDIA-authorized explicit subscriptions. Agents still receive no live
+        audio and SFU state remains ephemeral.
       </footer>
     </main>
   );
