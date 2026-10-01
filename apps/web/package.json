@@ -13,7 +13,8 @@
     "@commonline/protocol": "0.0.1",
     "@commonline/ui": "0.0.1",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "mediasoup-client": "^3.23.2"
   },
   "devDependencies": {
     "@types/react": "^19.1.12",

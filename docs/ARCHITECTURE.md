@@ -295,3 +295,11 @@ An SFU may route packets. It does not become a Commonline participant or authori
 Because P0-i media packets remain peer-to-peer SRTP, the server cannot enforce source-level packet routing against a malicious client after signaling has been authorized.
 
 The supported client obeys the routing plan. P0-j must move enforcement into an SFU if the client is not trusted.
+
+## P0-j real SFU adapter
+
+The P0-i source/subscription model now drives a mediasoup packet router. Commonline remains authoritative for whether the SFU may create a Producer or Consumer.
+
+One mediasoup Worker and WebRtcServer are shared by the process. Each active group-media generation receives its own Router. Participant transports and packet-routing objects are ephemeral and are closed when the Commonline control state no longer authorizes them.
+
+An SFU transport existing does not create a Commonline grant, source, subscription, or durable room event.

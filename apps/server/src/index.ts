@@ -4,7 +4,6 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AgentWorkStatusMessage,
   type ClientMessage,
-  type GroupRtcSignalRelayMessage,
   type IntentRejectedMessage,
   type RoomEventMessage,
   type RoomSnapshotMessage,
@@ -21,6 +20,10 @@ import {
   isPolitePeer,
   MediaSessionRegistry
 } from "./mediaSessionRegistry";
+import {
+  MediasoupSfuAdapter,
+  mediasoupConfigFromEnv
+} from "./mediasoupSfu";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
@@ -39,6 +42,9 @@ const service = new RoomService(
 );
 const workPlane = new EphemeralWorkPlane();
 const agent = new MockSilentAgent("Vessie");
+const sfu = await MediasoupSfuAdapter.create(
+  mediasoupConfigFromEnv()
+);
 
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
@@ -50,7 +56,9 @@ const httpServer = createServer((request, response) => {
         schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
         storage: "sqlite",
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
-        identity: "p256-challenge-response"
+        identity: "p256-challenge-response",
+        groupMedia: "mediasoup-p0",
+        sfu: sfu.status()
       })
     );
     return;
@@ -77,6 +85,54 @@ function broadcast(roomId: string, message: ServerMessage, except?: WebSocket) {
   for (const socket of sockets) {
     if (socket !== except) send(socket, message);
   }
+}
+
+function reconcileGroupMedia(roomId: string) {
+  const current = groupMedia.current(roomId);
+  if (current) {
+    sfu.reconcile(current);
+  } else {
+    sfu.closeRoom(roomId);
+  }
+}
+
+function sfuFailureCode(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error);
+
+  if (message.includes("SFU_TRANSPORT_NOT_FOUND")) {
+    return "SFU_TRANSPORT_NOT_FOUND" as const;
+  }
+  if (message.includes("SFU_SOURCE_NOT_READY")) {
+    return "SFU_SOURCE_NOT_READY" as const;
+  }
+  if (message.includes("SFU_CANNOT_CONSUME")) {
+    return "SFU_CANNOT_CONSUME" as const;
+  }
+
+  return "SFU_NOT_READY" as const;
+}
+
+function activeGroupSession(input: {
+  roomId: string;
+  participantId: string;
+  mediaSessionId: string;
+  generation: number;
+}) {
+  const current = groupMedia.currentForParticipant(
+    input.roomId,
+    input.participantId
+  );
+
+  if (
+    !current ||
+    current.mediaSessionId !== input.mediaSessionId ||
+    current.generation !== input.generation
+  ) {
+    return undefined;
+  }
+
+  return current;
 }
 
 function broadcastGroupMediaState(roomId: string, requestId: string) {
@@ -180,7 +236,13 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "group_media_publish_microphone" ||
       parsed.type === "group_media_unpublish" ||
       parsed.type === "group_media_subscribe" ||
-      parsed.type === "group_media_unsubscribe"
+      parsed.type === "group_media_unsubscribe" ||
+      parsed.type === "sfu_capabilities_request" ||
+      parsed.type === "sfu_transport_create" ||
+      parsed.type === "sfu_transport_connect" ||
+      parsed.type === "sfu_produce" ||
+      parsed.type === "sfu_consume" ||
+      parsed.type === "sfu_consumer_resume"
     ) {
       return parsed as ClientMessage;
     }
@@ -377,7 +439,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-i fields."
+          message: "join_room is missing required P0-j fields."
         });
         return;
       }
@@ -537,6 +599,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -546,6 +609,11 @@ wss.on("connection", (socket) => {
         roomId: session.roomId,
         participantId: session.participantId
       });
+      sfu.closeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -583,6 +651,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -604,6 +673,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -642,6 +712,7 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -663,7 +734,387 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(session.roomId, message.requestId);
+      return;
+    }
+
+    if (message.type === "sfu_capabilities_request") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message:
+            "Join the current group media session before requesting SFU capabilities."
+        });
+        return;
+      }
+
+      try {
+        const routerRtpCapabilities =
+          await sfu.routerCapabilities(groupSession);
+        send(socket, {
+          type: "sfu_capabilities",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          mediaSessionId: groupSession.mediaSessionId,
+          generation: groupSession.generation,
+          routerRtpCapabilities
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "SFU router capabilities are unavailable."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "sfu_transport_create") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message: "The requested group media session is stale."
+        });
+        return;
+      }
+
+      if (
+        message.direction !== "send" &&
+        message.direction !== "recv"
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_DIRECTION_INVALID",
+          message: "SFU transport direction must be send or recv."
+        });
+        return;
+      }
+
+      const requiredCapability =
+        message.direction === "send"
+          ? "SPEAK"
+          : "RECEIVE_MEDIA";
+
+      if (
+        !groupMediaPermission(
+          session.roomId,
+          session.participantId,
+          requiredCapability
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            `Creating an SFU ${message.direction} transport requires ${requiredCapability} authority.`
+        });
+        return;
+      }
+
+      try {
+        const transport = await sfu.createTransport({
+          session: groupSession,
+          participantId: session.participantId,
+          direction: message.direction
+        });
+        send(socket, {
+          type: "sfu_transport_created",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          mediaSessionId: groupSession.mediaSessionId,
+          generation: groupSession.generation,
+          direction: message.direction,
+          transport
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not create the SFU transport."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "sfu_transport_connect") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message: "The requested group media session is stale."
+        });
+        return;
+      }
+
+      try {
+        await sfu.connectTransport({
+          roomId: session.roomId,
+          participantId: session.participantId,
+          transportId: message.transportId,
+          dtlsParameters: message.dtlsParameters
+        });
+        send(socket, {
+          type: "sfu_transport_connected",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          transportId: message.transportId
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not connect the SFU transport."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "sfu_produce") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+      const source = groupMedia.source(
+        session.roomId,
+        message.sourceId
+      );
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message: "The requested group media session is stale."
+        });
+        return;
+      }
+
+      if (
+        !source ||
+        source.ownerParticipantId !== session.participantId ||
+        source.kind !== "microphone" ||
+        message.kind !== "audio"
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "MEDIA_SOURCE_NOT_FOUND",
+          message:
+            "The SFU may only produce the caller's explicitly published microphone source."
+        });
+        return;
+      }
+
+      if (
+        !groupMediaPermission(
+          session.roomId,
+          session.participantId,
+          "SPEAK"
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "Producing audio into the SFU requires an active SPEAK grant."
+        });
+        return;
+      }
+
+      try {
+        const producerId = await sfu.produce({
+          session: groupSession,
+          participantId: session.participantId,
+          transportId: message.transportId,
+          sourceId: message.sourceId,
+          kind: message.kind,
+          rtpParameters: message.rtpParameters,
+          appData: message.appData
+        });
+
+        send(socket, {
+          type: "sfu_produced",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          sourceId: message.sourceId,
+          producerId
+        });
+
+        // The control state did not change, but subscribers may have been
+        // waiting for this source to become physically routable.
+        broadcastGroupMediaState(
+          session.roomId,
+          `sfu-source-ready-${crypto.randomUUID()}`
+        );
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not create the governed SFU producer."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "sfu_consume") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+      const source = groupMedia.source(
+        session.roomId,
+        message.sourceId
+      );
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message: "The requested group media session is stale."
+        });
+        return;
+      }
+
+      if (!source) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "MEDIA_SOURCE_NOT_FOUND",
+          message: "The requested media source does not exist."
+        });
+        return;
+      }
+
+      if (
+        !groupMediaPermission(
+          session.roomId,
+          session.participantId,
+          "RECEIVE_MEDIA"
+        ) ||
+        !groupMedia.hasSubscription(
+          session.roomId,
+          session.participantId,
+          message.sourceId
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "The SFU will not create a consumer without an active RECEIVE_MEDIA grant and explicit source subscription."
+        });
+        return;
+      }
+
+      try {
+        const consumed = await sfu.consume({
+          session: groupSession,
+          participantId: session.participantId,
+          transportId: message.transportId,
+          sourceId: message.sourceId,
+          rtpCapabilities: message.rtpCapabilities
+        });
+
+        send(socket, {
+          type: "sfu_consumed",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          sourceId: message.sourceId,
+          consumerId: consumed.consumerId,
+          producerId: consumed.producerId,
+          kind: "audio",
+          rtpParameters: consumed.rtpParameters,
+          producerPaused: consumed.producerPaused
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not create the governed SFU consumer."
+        });
+      }
+      return;
+    }
+
+    if (message.type === "sfu_consumer_resume") {
+      const groupSession = activeGroupSession({
+        roomId: session.roomId,
+        participantId: session.participantId,
+        mediaSessionId: message.mediaSessionId,
+        generation: message.generation
+      });
+
+      if (!groupSession) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "SFU_SESSION_STALE",
+          message: "The requested group media session is stale."
+        });
+        return;
+      }
+
+      try {
+        await sfu.resumeConsumer({
+          roomId: session.roomId,
+          participantId: session.participantId,
+          consumerId: message.consumerId
+        });
+        send(socket, {
+          type: "sfu_consumer_resumed",
+          requestId: message.requestId,
+          roomId: session.roomId,
+          consumerId: message.consumerId
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: sfuFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not resume the governed SFU consumer."
+        });
+      }
       return;
     }
 
@@ -839,50 +1290,12 @@ wss.on("connection", (socket) => {
     }
 
     if (message.type === "group_rtc_signal") {
-      const validation = groupMedia.validateSignal({
-        roomId: session.roomId,
-        mediaSessionId: message.mediaSessionId,
-        generation: message.generation,
-        actorParticipantId: session.participantId,
-        targetParticipantId: message.targetParticipantId
-      });
-
-      if (!validation.ok) {
-        reject(socket, {
-          requestId: message.requestId,
-          code: validation.code,
-          message: validation.message,
-          room: service.getRoom(session.roomId)
-        });
-        return;
-      }
-
-      const target = sessions.current(
-        session.roomId,
-        message.targetParticipantId
-      )?.connection;
-
-      if (!target || target.readyState !== WebSocket.OPEN) {
-        reject(socket, {
-          requestId: message.requestId,
-          code: "PEER_UNAVAILABLE",
-          message:
-            "The requested group-media peer has no active signaling connection.",
-          room: service.getRoom(session.roomId)
-        });
-        return;
-      }
-
-      const relay: GroupRtcSignalRelayMessage = {
-        type: "group_rtc_signal",
+      reject(socket, {
         requestId: message.requestId,
-        roomId: session.roomId,
-        mediaSessionId: message.mediaSessionId,
-        generation: message.generation,
-        fromParticipantId: session.participantId,
-        signal: message.signal
-      };
-      send(target, relay);
+        code: "INVALID_INTENT",
+        message:
+          "P0-j disables peer-to-peer group signaling. Multiparty audio must traverse the governed SFU."
+      });
       return;
     }
 
@@ -1069,6 +1482,11 @@ wss.on("connection", (socket) => {
         roomId: session.roomId,
         participantId: session.participantId
       });
+      sfu.closeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(
         session.roomId,
         `group-peer-left-${crypto.randomUUID()}`
@@ -1088,9 +1506,12 @@ wss.on("connection", (socket) => {
 });
 
 function shutdown(signal: string) {
-  console.log(`Commonline received ${signal}; closing SQLite store.`);
+  console.log(
+    `Commonline received ${signal}; closing SFU and SQLite store.`
+  );
   wss.close();
   httpServer.close(() => {
+    sfu.close();
     store.close();
     process.exit(0);
   });
