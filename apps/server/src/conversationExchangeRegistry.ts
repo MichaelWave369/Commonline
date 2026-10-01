@@ -28,12 +28,16 @@ export type ConversationExchangeClaimResult =
 const DEFAULT_TTL_MS = 120_000;
 
 function view(record: ConversationExchangeRecord): ConversationExchangeView {
-  const {
-    transcript: _transcript,
-    responseInFlight: _responseInFlight,
-    ...publicView
-  } = record;
-  return { ...publicView };
+  return {
+    exchangeId: record.exchangeId,
+    roomId: record.roomId,
+    humanParticipantId: record.humanParticipantId,
+    agentParticipantId: record.agentParticipantId,
+    listeningShareId: record.listeningShareId,
+    state: record.state,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
+  };
 }
 
 export class ConversationExchangeRegistry {
