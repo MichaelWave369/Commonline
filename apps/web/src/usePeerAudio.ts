@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject
+} from "react";
 import type {
+  RtcCallSessionMessage,
   RtcConfigMessage,
   RtcSignalPayload,
   RtcSignalRelayMessage
@@ -9,6 +16,11 @@ import {
   type RtcMetrics,
   type RtcStatLike
 } from "./rtcDiagnostics";
+import {
+  mediaSessionKey,
+  sameMediaSession,
+  shouldIgnoreOffer
+} from "./perfectNegotiation";
 import { mediaContextLabel } from "./transportSecurity";
 
 type CallState =
@@ -18,11 +30,6 @@ type CallState =
   | "connecting"
   | "connected"
   | "error";
-
-interface IncomingOffer {
-  fromParticipantId: string;
-  sdp: string;
-}
 
 export interface CallDiagnostics {
   networkOnline: boolean;
@@ -42,10 +49,15 @@ export interface CallDiagnostics {
 interface UsePeerAudioInput {
   roomConnected: boolean;
   rtcConfig: RtcConfigMessage | null;
+  rtcSessionInbox: RtcCallSessionMessage[];
   rtcInbox: RtcSignalRelayMessage[];
+  consumeRtcSession: (requestId: string) => void;
   consumeRtcSignal: (requestId: string) => void;
+  openRtcCall: (targetParticipantId: string) => boolean;
   sendRtcSignal: (
     targetParticipantId: string,
+    callId: string,
+    generation: number,
     signal: RtcSignalPayload
   ) => boolean;
 }
@@ -78,19 +90,40 @@ function configExpired(config: RtcConfigMessage) {
   );
 }
 
+function signalMatchesSession(
+  signal: RtcSignalRelayMessage,
+  session: RtcCallSessionMessage
+) {
+  return (
+    signal.callId === session.callId &&
+    signal.generation === session.generation &&
+    signal.fromParticipantId === session.peerParticipantId
+  );
+}
+
 export function usePeerAudio({
   roomConnected,
   rtcConfig,
+  rtcSessionInbox,
   rtcInbox,
+  consumeRtcSession,
   consumeRtcSignal,
+  openRtcCall,
   sendRtcSignal
 }: UsePeerAudioInput) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const activePeerRef = useRef<string | null>(null);
-  const incomingPeerRef = useRef<string | null>(null);
+  const activeSessionRef = useRef<RtcCallSessionMessage | null>(null);
+  const incomingSessionRef = useRef<RtcCallSessionMessage | null>(null);
+  const pendingOpenTargetRef = useRef<string | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
-  const processingRef = useRef(new Set<string>());
+  const queuedSignalsRef = useRef<RtcSignalRelayMessage[]>([]);
+  const processingSignalsRef = useRef(new Set<string>());
+  const processingSessionsRef = useRef(new Set<string>());
+
+  const makingOfferRef = useRef(false);
+  const ignoreOfferRef = useRef(false);
+  const isSettingRemoteAnswerPendingRef = useRef(false);
 
   const setupTimerRef = useRef<number | null>(null);
   const disconnectTimerRef = useRef<number | null>(null);
@@ -100,7 +133,9 @@ export function usePeerAudio({
   const [state, setState] = useState<CallState>("idle");
   const [peerId, setPeerId] = useState<string | null>(null);
   const [incomingOffer, setIncomingOffer] =
-    useState<IncomingOffer | null>(null);
+    useState<RtcCallSessionMessage | null>(null);
+  const [callSession, setCallSession] =
+    useState<RtcCallSessionMessage | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,13 +154,16 @@ export function usePeerAudio({
     metrics: emptyMetrics
   }));
 
-  const clearTimer = useCallback((ref: MutableRefObject<number | null>) => {
-    if (ref.current !== null) {
-      window.clearTimeout(ref.current);
-      window.clearInterval(ref.current);
-      ref.current = null;
-    }
-  }, []);
+  const clearTimer = useCallback(
+    (ref: MutableRefObject<number | null>) => {
+      if (ref.current !== null) {
+        window.clearTimeout(ref.current);
+        window.clearInterval(ref.current);
+        ref.current = null;
+      }
+    },
+    []
+  );
 
   const clearCallTimers = useCallback(() => {
     clearTimer(setupTimerRef);
@@ -139,6 +177,14 @@ export function usePeerAudio({
     localStreamRef.current = null;
   }, []);
 
+  const resetNegotiation = useCallback(() => {
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
+    isSettingRemoteAnswerPendingRef.current = false;
+    pendingIceRef.current = [];
+    queuedSignalsRef.current = [];
+  }, []);
+
   const cleanupCall = useCallback(() => {
     const pc = pcRef.current;
     pcRef.current = null;
@@ -146,10 +192,13 @@ export function usePeerAudio({
 
     clearCallTimers();
     stopLocalMedia();
-    activePeerRef.current = null;
-    incomingPeerRef.current = null;
-    pendingIceRef.current = [];
+    resetNegotiation();
+
+    activeSessionRef.current = null;
+    incomingSessionRef.current = null;
+    pendingOpenTargetRef.current = null;
     setIncomingOffer(null);
+    setCallSession(null);
     setPeerId(null);
     setRemoteStream(null);
     setMuted(false);
@@ -162,14 +211,32 @@ export function usePeerAudio({
       connectionState: "none",
       metrics: emptyMetrics
     }));
-  }, [clearCallTimers, stopLocalMedia]);
+  }, [clearCallTimers, resetNegotiation, stopLocalMedia]);
+
+  const sendForSession = useCallback(
+    (
+      session: RtcCallSessionMessage,
+      signal: RtcSignalPayload
+    ) =>
+      sendRtcSignal(
+        session.peerParticipantId,
+        session.callId,
+        session.generation,
+        signal
+      ),
+    [sendRtcSignal]
+  );
 
   const failCall = useCallback(
     (message: string) => {
-      const target =
-        activePeerRef.current ?? incomingPeerRef.current ?? undefined;
-      if (target) {
-        sendRtcSignal(target, { kind: "hangup", reason: "failed" });
+      const session =
+        activeSessionRef.current ?? incomingSessionRef.current;
+
+      if (session) {
+        sendForSession(session, {
+          kind: "hangup",
+          reason: "failed"
+        });
       }
 
       cleanupCall();
@@ -181,7 +248,7 @@ export function usePeerAudio({
         lastUpdatedAt: new Date().toISOString()
       }));
     },
-    [cleanupCall, sendRtcSignal]
+    [cleanupCall, sendForSession]
   );
 
   const microphone = useCallback(async () => {
@@ -193,9 +260,7 @@ export function usePeerAudio({
         secureContext: window.isSecureContext
       }) !== "secure"
     ) {
-      throw new Error(
-        "Microphone access requires HTTPS or localhost."
-      );
+      throw new Error("Microphone access requires HTTPS or localhost.");
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -285,8 +350,46 @@ export function usePeerAudio({
     }));
   }, []);
 
+  const sendLocalDescription = useCallback(
+    (session: RtcCallSessionMessage, pc: RTCPeerConnection) => {
+      const description = pc.localDescription;
+      if (
+        !description ||
+        (description.type !== "offer" &&
+          description.type !== "answer") ||
+        !description.sdp
+      ) {
+        return false;
+      }
+
+      return sendForSession(session, {
+        kind: description.type,
+        sdp: description.sdp
+      });
+    },
+    [sendForSession]
+  );
+
+  const flushIce = useCallback(
+    async (pc: RTCPeerConnection) => {
+      if (!pc.remoteDescription || ignoreOfferRef.current) return;
+
+      const pending = pendingIceRef.current;
+      pendingIceRef.current = [];
+
+      for (const candidate of pending) {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch (cause) {
+          if (!ignoreOfferRef.current) throw cause;
+        }
+      }
+    },
+    []
+  );
+
   const buildPeer = useCallback(
-    (targetParticipantId: string) => {
+    (session: RtcCallSessionMessage) => {
       if (!rtcConfig) {
         throw new Error(
           "ICE configuration has not arrived from the authenticated room service yet."
@@ -300,11 +403,15 @@ export function usePeerAudio({
       }
 
       pcRef.current?.close();
+      resetNegotiation();
+
       const pc = new RTCPeerConnection(toRtcConfiguration(rtcConfig));
       pcRef.current = pc;
-      activePeerRef.current = targetParticipantId;
-      incomingPeerRef.current = null;
-      setPeerId(targetParticipantId);
+      activeSessionRef.current = session;
+      incomingSessionRef.current = null;
+      setCallSession(session);
+      setIncomingOffer(null);
+      setPeerId(session.peerParticipantId);
 
       setDiagnostics((current) => ({
         ...current,
@@ -327,7 +434,7 @@ export function usePeerAudio({
 
       pc.addEventListener("icecandidate", (event) => {
         if (!event.candidate) return;
-        sendRtcSignal(targetParticipantId, {
+        sendForSession(session, {
           kind: "ice",
           candidate: event.candidate.candidate,
           sdpMid: event.candidate.sdpMid,
@@ -390,6 +497,34 @@ export function usePeerAudio({
         }
       });
 
+      pc.addEventListener("negotiationneeded", async () => {
+        if (
+          pcRef.current !== pc ||
+          !sameMediaSession(activeSessionRef.current, session)
+        ) {
+          return;
+        }
+
+        try {
+          makingOfferRef.current = true;
+          await pc.setLocalDescription();
+
+          if (!sendLocalDescription(session, pc)) {
+            throw new Error("Could not send the negotiated local description.");
+          }
+
+          updatePeerStates(pc);
+        } catch (cause) {
+          failCall(
+            cause instanceof Error
+              ? cause.message
+              : "WebRTC negotiation failed."
+          );
+        } finally {
+          makingOfferRef.current = false;
+        }
+      });
+
       return pc;
     },
     [
@@ -397,67 +532,148 @@ export function usePeerAudio({
       clearDisconnectGrace,
       clearTimer,
       failCall,
+      resetNegotiation,
       rtcConfig,
-      sendRtcSignal,
+      sendForSession,
+      sendLocalDescription,
       startStats,
       updatePeerStates
     ]
   );
 
-  const flushIce = useCallback(async () => {
-    const pc = pcRef.current;
-    if (!pc?.remoteDescription) return;
-    const pending = pendingIceRef.current;
-    pendingIceRef.current = [];
+  const applySignalToActive = useCallback(
+    async (message: RtcSignalRelayMessage) => {
+      const session = activeSessionRef.current;
+      const pc = pcRef.current;
+      if (
+        !session ||
+        !pc ||
+        !signalMatchesSession(message, session)
+      ) {
+        return;
+      }
 
-    for (const candidate of pending) {
-      await pc.addIceCandidate(candidate);
+      const signal = message.signal;
+
+      if (signal.kind === "offer" || signal.kind === "answer") {
+        const description: RTCSessionDescriptionInit = {
+          type: signal.kind,
+          sdp: signal.sdp
+        };
+
+        ignoreOfferRef.current = shouldIgnoreOffer({
+          polite: session.polite,
+          descriptionType: description.type!,
+          makingOffer: makingOfferRef.current,
+          signalingState: pc.signalingState,
+          isSettingRemoteAnswerPending:
+            isSettingRemoteAnswerPendingRef.current
+        });
+
+        if (ignoreOfferRef.current) {
+          return;
+        }
+
+        isSettingRemoteAnswerPendingRef.current =
+          description.type === "answer";
+
+        try {
+          await pc.setRemoteDescription(description);
+        } finally {
+          isSettingRemoteAnswerPendingRef.current = false;
+        }
+
+        updatePeerStates(pc);
+
+        if (description.type === "offer") {
+          await pc.setLocalDescription();
+          if (!sendLocalDescription(session, pc)) {
+            throw new Error("Could not send the perfect-negotiation answer.");
+          }
+          updatePeerStates(pc);
+        }
+
+        await flushIce(pc);
+        return;
+      }
+
+      if (signal.kind === "ice") {
+        if (ignoreOfferRef.current) return;
+
+        const candidate: RTCIceCandidateInit = {
+          candidate: signal.candidate,
+          sdpMid: signal.sdpMid,
+          sdpMLineIndex: signal.sdpMLineIndex,
+          usernameFragment: signal.usernameFragment
+        };
+
+        if (pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (cause) {
+            if (!ignoreOfferRef.current) throw cause;
+          }
+        } else {
+          pendingIceRef.current.push(candidate);
+        }
+      }
+    },
+    [flushIce, sendLocalDescription, updatePeerStates]
+  );
+
+  const drainQueuedSignals = useCallback(async () => {
+    const session = activeSessionRef.current;
+    if (!session) return;
+
+    const queued = queuedSignalsRef.current;
+    queuedSignalsRef.current = [];
+
+    for (const message of queued) {
+      if (signalMatchesSession(message, session)) {
+        await applySignalToActive(message);
+      }
     }
-  }, []);
+  }, [applySignalToActive]);
 
-  const startCall = useCallback(
-    async (targetParticipantId: string) => {
-      if (state !== "idle" || !roomConnected) return;
-
-      if (!rtcConfig) {
-        setError("Waiting for authenticated ICE configuration.");
+  const activateSession = useCallback(
+    async (session: RtcCallSessionMessage) => {
+      if (!rtcConfig || configExpired(rtcConfig)) {
+        sendForSession(session, {
+          kind: "hangup",
+          reason: "failed"
+        });
+        cleanupCall();
+        setError(
+          "No usable authenticated ICE configuration is available for this call."
+        );
+        setState("error");
         return;
       }
 
       setError(null);
-      setState("calling");
-      setPeerId(targetParticipantId);
-      pendingIceRef.current = [];
+      setState("connecting");
+      clearTimer(incomingTimerRef);
 
       try {
         const stream = await microphone();
-        const pc = buildPeer(targetParticipantId);
-        stream.getTracks().forEach((track) =>
-          pc.addTrack(track, stream)
-        );
+        const pc = buildPeer(session);
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        updatePeerStates(pc);
+        stream.getTracks().forEach((track) => {
+          pc.addTrack(track, stream);
+        });
 
-        if (
-          !offer.sdp ||
-          !sendRtcSignal(targetParticipantId, {
-            kind: "offer",
-            sdp: offer.sdp
-          })
-        ) {
-          throw new Error("Could not send the call offer.");
-        }
-
-        setState("connecting");
+        await drainQueuedSignals();
         armSetupTimeout();
       } catch (cause) {
+        sendForSession(session, {
+          kind: "hangup",
+          reason: "failed"
+        });
         cleanupCall();
         setError(
           cause instanceof Error
             ? cause.message
-            : "Could not start audio."
+            : "Could not activate the media session."
         );
         setState("error");
       }
@@ -466,106 +682,132 @@ export function usePeerAudio({
       armSetupTimeout,
       buildPeer,
       cleanupCall,
+      clearTimer,
+      drainQueuedSignals,
       microphone,
-      roomConnected,
       rtcConfig,
-      sendRtcSignal,
-      state,
-      updatePeerStates
+      sendForSession
     ]
   );
 
-  const answerCall = useCallback(async () => {
-    if (!incomingOffer || !roomConnected) return;
-
-    if (!rtcConfig) {
-      sendRtcSignal(incomingOffer.fromParticipantId, {
-        kind: "hangup",
-        reason: "failed"
-      });
-      cleanupCall();
-      setError("No authenticated ICE configuration is available.");
-      setState("error");
-      return;
-    }
-
-    setError(null);
-    setState("connecting");
-    clearTimer(incomingTimerRef);
-
-    try {
-      const stream = await microphone();
-      const pc = buildPeer(incomingOffer.fromParticipantId);
-      stream.getTracks().forEach((track) =>
-        pc.addTrack(track, stream)
-      );
-
-      await pc.setRemoteDescription({
-        type: "offer",
-        sdp: incomingOffer.sdp
-      });
-      updatePeerStates(pc);
-      await flushIce();
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      updatePeerStates(pc);
-
+  const handleCallSession = useCallback(
+    async (session: RtcCallSessionMessage) => {
       if (
-        !answer.sdp ||
-        !sendRtcSignal(incomingOffer.fromParticipantId, {
-          kind: "answer",
-          sdp: answer.sdp
-        })
+        sameMediaSession(activeSessionRef.current, session) ||
+        sameMediaSession(incomingSessionRef.current, session)
       ) {
-        throw new Error("Could not send the call answer.");
+        return;
       }
 
-      setIncomingOffer(null);
-      armSetupTimeout();
-    } catch (cause) {
-      const target = incomingOffer.fromParticipantId;
+      if (
+        activeSessionRef.current ||
+        incomingSessionRef.current
+      ) {
+        sendForSession(session, {
+          kind: "hangup",
+          reason: "superseded"
+        });
+        return;
+      }
+
+      setPeerId(session.peerParticipantId);
+      setCallSession(session);
+
+      const outgoingConsent =
+        pendingOpenTargetRef.current === session.peerParticipantId;
+
+      if (outgoingConsent) {
+        pendingOpenTargetRef.current = null;
+        activeSessionRef.current = session;
+        await activateSession(session);
+        return;
+      }
+
+      incomingSessionRef.current = session;
+      setIncomingOffer(session);
+      setState("incoming");
+
+      clearTimer(incomingTimerRef);
+      incomingTimerRef.current = window.setTimeout(() => {
+        if (
+          sameMediaSession(incomingSessionRef.current, session)
+        ) {
+          sendForSession(session, {
+            kind: "hangup",
+            reason: "declined"
+          });
+          cleanupCall();
+        }
+      }, INCOMING_RING_TIMEOUT_MS);
+    },
+    [activateSession, cleanupCall, clearTimer, sendForSession]
+  );
+
+  const startCall = useCallback(
+    (targetParticipantId: string) => {
+      if (
+        (state !== "idle" && state !== "error") ||
+        !roomConnected
+      ) {
+        return;
+      }
+
+      if (!rtcConfig || configExpired(rtcConfig)) {
+        setError("Waiting for usable authenticated ICE configuration.");
+        setState("error");
+        return;
+      }
+
       cleanupCall();
-      sendRtcSignal(target, { kind: "hangup", reason: "failed" });
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not answer audio."
-      );
-      setState("error");
-    }
-  }, [
-    armSetupTimeout,
-    buildPeer,
-    cleanupCall,
-    clearTimer,
-    flushIce,
-    incomingOffer,
-    microphone,
-    roomConnected,
-    rtcConfig,
-    sendRtcSignal,
-    updatePeerStates
-  ]);
+      setError(null);
+      setState("calling");
+      setPeerId(targetParticipantId);
+      pendingOpenTargetRef.current = targetParticipantId;
+
+      if (!openRtcCall(targetParticipantId)) {
+        pendingOpenTargetRef.current = null;
+        setError("Could not request an ephemeral media session.");
+        setState("error");
+      }
+    },
+    [cleanupCall, openRtcCall, roomConnected, rtcConfig, state]
+  );
+
+  const answerCall = useCallback(async () => {
+    const session = incomingSessionRef.current;
+    if (!session || !roomConnected) return;
+
+    incomingSessionRef.current = null;
+    activeSessionRef.current = session;
+    setIncomingOffer(null);
+    await activateSession(session);
+  }, [activateSession, roomConnected]);
 
   const declineCall = useCallback(() => {
-    if (!incomingOffer) return;
-    sendRtcSignal(incomingOffer.fromParticipantId, {
+    const session = incomingSessionRef.current;
+    if (!session) return;
+
+    sendForSession(session, {
       kind: "hangup",
       reason: "declined"
     });
     cleanupCall();
-  }, [cleanupCall, incomingOffer, sendRtcSignal]);
+  }, [cleanupCall, sendForSession]);
 
   const hangup = useCallback(() => {
-    const target =
-      activePeerRef.current ?? incomingPeerRef.current;
-    if (target) {
-      sendRtcSignal(target, { kind: "hangup", reason: "ended" });
+    const session =
+      activeSessionRef.current ?? incomingSessionRef.current;
+
+    if (session) {
+      sendForSession(session, {
+        kind: "hangup",
+        reason: "ended"
+      });
     }
+
     cleanupCall();
     setError(null);
-  }, [cleanupCall, sendRtcSignal]);
+  }, [cleanupCall, sendForSession]);
 
   const toggleMute = useCallback(() => {
     const stream = localStreamRef.current;
@@ -579,120 +821,100 @@ export function usePeerAudio({
 
   const handleSignal = useCallback(
     async (message: RtcSignalRelayMessage) => {
-      const { fromParticipantId, signal } = message;
+      const active = activeSessionRef.current;
+      const incoming = incomingSessionRef.current;
+      const matchingSession =
+        active && signalMatchesSession(message, active)
+          ? active
+          : incoming && signalMatchesSession(message, incoming)
+            ? incoming
+            : null;
 
-      if (signal.kind === "hangup") {
+      if (!matchingSession) {
+        // A late packet from an ended/superseded generation is intentionally
+        // ignored client-side even though the server also rejects stale sends.
+        return;
+      }
+
+      if (message.signal.kind === "hangup") {
+        cleanupCall();
+
         if (
-          fromParticipantId === activePeerRef.current ||
-          fromParticipantId === incomingPeerRef.current
+          message.signal.reason === "failed" ||
+          message.signal.reason === "peer-left"
         ) {
-          cleanupCall();
           setError(
-            signal.reason === "failed"
-              ? "The remote peer reported a call failure."
-              : null
+            message.signal.reason === "peer-left"
+              ? "The peer left the room; this exact media session ended."
+              : "The remote peer reported a call failure."
           );
+          setState("error");
         }
         return;
       }
 
-      if (signal.kind === "offer") {
-        if (pcRef.current || incomingPeerRef.current) {
-          sendRtcSignal(fromParticipantId, {
-            kind: "hangup",
-            reason: "declined"
-          });
-          return;
-        }
-
-        if (!rtcConfig || configExpired(rtcConfig)) {
-          sendRtcSignal(fromParticipantId, {
-            kind: "hangup",
-            reason: "failed"
-          });
-          setError(
-            "Incoming call rejected because usable ICE configuration is unavailable."
-          );
-          return;
-        }
-
-        pendingIceRef.current = [];
-        incomingPeerRef.current = fromParticipantId;
-        setPeerId(fromParticipantId);
-        setIncomingOffer({
-          fromParticipantId,
-          sdp: signal.sdp
-        });
-        setState("incoming");
-
-        clearTimer(incomingTimerRef);
-        incomingTimerRef.current = window.setTimeout(() => {
-          if (incomingPeerRef.current === fromParticipantId) {
-            sendRtcSignal(fromParticipantId, {
-              kind: "hangup",
-              reason: "declined"
-            });
-            cleanupCall();
-          }
-        }, INCOMING_RING_TIMEOUT_MS);
+      if (!active || !pcRef.current) {
+        queuedSignalsRef.current.push(message);
         return;
       }
 
-      if (signal.kind === "answer") {
-        const pc = pcRef.current;
-        if (!pc || activePeerRef.current !== fromParticipantId) return;
-
-        await pc.setRemoteDescription({
-          type: "answer",
-          sdp: signal.sdp
-        });
-        updatePeerStates(pc);
-        await flushIce();
-        return;
-      }
-
-      if (
-        signal.kind === "ice" &&
-        (activePeerRef.current === fromParticipantId ||
-          incomingPeerRef.current === fromParticipantId)
-      ) {
-        const candidate: RTCIceCandidateInit = {
-          candidate: signal.candidate,
-          sdpMid: signal.sdpMid,
-          sdpMLineIndex: signal.sdpMLineIndex,
-          usernameFragment: signal.usernameFragment
-        };
-
-        if (pcRef.current?.remoteDescription) {
-          await pcRef.current.addIceCandidate(candidate);
-        } else {
-          pendingIceRef.current.push(candidate);
-        }
-      }
+      await applySignalToActive(message);
     },
-    [
-      cleanupCall,
-      clearTimer,
-      flushIce,
-      rtcConfig,
-      sendRtcSignal,
-      updatePeerStates
-    ]
+    [applySignalToActive, cleanupCall]
   );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function process() {
-      for (const message of rtcInbox) {
+    async function processSessions() {
+      for (const session of rtcSessionInbox) {
         if (
           cancelled ||
-          processingRef.current.has(message.requestId)
+          processingSessionsRef.current.has(session.requestId)
         ) {
           continue;
         }
 
-        processingRef.current.add(message.requestId);
+        processingSessionsRef.current.add(session.requestId);
+        try {
+          await handleCallSession(session);
+        } catch (cause) {
+          failCall(
+            cause instanceof Error
+              ? cause.message
+              : "Media-session setup failed."
+          );
+        } finally {
+          consumeRtcSession(session.requestId);
+          processingSessionsRef.current.delete(session.requestId);
+        }
+      }
+    }
+
+    void processSessions();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    consumeRtcSession,
+    failCall,
+    handleCallSession,
+    rtcSessionInbox
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function processSignals() {
+      for (const message of rtcInbox) {
+        if (
+          cancelled ||
+          processingSignalsRef.current.has(message.requestId)
+        ) {
+          continue;
+        }
+
+        processingSignalsRef.current.add(message.requestId);
         try {
           await handleSignal(message);
         } catch (cause) {
@@ -703,12 +925,12 @@ export function usePeerAudio({
           );
         } finally {
           consumeRtcSignal(message.requestId);
-          processingRef.current.delete(message.requestId);
+          processingSignalsRef.current.delete(message.requestId);
         }
       }
     }
 
-    void process();
+    void processSignals();
     return () => {
       cancelled = true;
     };
@@ -764,6 +986,7 @@ export function usePeerAudio({
     state,
     peerId,
     incomingOffer,
+    callSession,
     remoteStream,
     muted,
     error,
