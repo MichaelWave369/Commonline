@@ -262,7 +262,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-r SELECTIVE RESUMPTION BRIEF</div>
+          <div className="eyebrow">COMMONLINE · P0-s MEMBERSHIP HISTORY FLOOR</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -1737,7 +1737,9 @@ export function App() {
             </div>
           )}
           <p className="muted small">
-            P0-r derives this view only from durable room state and durable room events.
+            P0-r derives this view only from durable room state and the server-authorized resume delta.
+            P0-s now blocks pre-membership event replay on first join and prevents reconnect
+            acknowledgement from rewinding below the identity's durable membership floor.
             Audio, listening transcripts, generated replies, attention leases, scratch,
             sessions, signaling, private keys, and recovery secrets are not inputs.
           </p>
@@ -1745,10 +1747,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-r closes the first CommonLine continuity loop without turning conversation into a
-        transcript archive. The resume brief is deterministic and derived from durable accepted
-        outcomes, unresolved bounded work, and missed durable room events. P0-q hearing and reply
-        exchanges remain ephemeral and outside this continuity view.
+        P0-s hardens that continuity loop with a membership history floor. A participant may inspect
+        current authorized room state, but joining does not retroactively authorize old durable
+        event replay. Known identities can resume post-membership changes; pre-membership history
+        remains unavailable unless a future explicit history-sharing authority is designed.
       </footer>
     </main>
   );
