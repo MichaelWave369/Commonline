@@ -692,3 +692,26 @@ See [RESUMPTION_P0R.md](RESUMPTION_P0R.md).
 The brief summarizes **state shape**, not conversation meaning.
 
 It may say that a proposal is waiting for review because that is an authoritative durable status. It may not infer that participants agreed, disagreed, promised something, or reached a conclusion unless that conclusion already exists as selected durable room state.
+
+
+## P0-s — pre-membership history isolation
+
+P0-s separates current room membership from retrospective durable event replay.
+
+Implemented:
+
+- first-time participants receive an empty `resumeDelta`
+- durable membership floor derived from the identity's earliest `participant_joined` event
+- reconnect acknowledgement cannot rewind below that floor
+- known participants still receive missed post-membership events
+- missing membership provenance fails closed at the current room boundary
+- current `RoomSnapshot` access remains governed separately by existing room-state authority
+- no retrospective-history grant path is implied or invented
+- no wire/storage migration; schema remains `p0-q.1`
+- room-service tests cover first join, legitimate reconnect, and acknowledgement rewind attempts
+
+See [HISTORY_ISOLATION_P0S.md](HISTORY_ISOLATION_P0S.md).
+
+### P0-s boundary
+
+P0-s does not yet provide a way to grant a newly joined participant older event history. That capability is deliberately absent until it has its own explicit authority model.
