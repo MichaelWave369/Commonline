@@ -102,6 +102,7 @@ export function useListeningShareCapture(input: {
   const [error, setError] = useState<string | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const elapsedTimerRef = useRef<number | null>(null);
+  const leaseIdRef = useRef<string | null>(null);
 
   const cleanup = useCallback(async () => {
     if (timeoutRef.current !== null) {
@@ -292,6 +293,19 @@ export function useListeningShareCapture(input: {
     setError(null);
     setState("idle");
   }, [cleanup]);
+
+  useEffect(() => {
+    const leaseId = input.lease?.leaseId ?? null;
+    if (leaseId && leaseId !== leaseIdRef.current) {
+      leaseIdRef.current = leaseId;
+      chunksRef.current = [];
+      setState("idle");
+      setElapsedMs(0);
+      setError(null);
+    } else if (!leaseId) {
+      leaseIdRef.current = null;
+    }
+  }, [input.lease?.leaseId]);
 
   useEffect(() => {
     if (input.lease?.state === "active") return;
