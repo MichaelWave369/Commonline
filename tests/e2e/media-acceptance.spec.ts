@@ -123,7 +123,7 @@ async function evidence(locator: Locator) {
   };
 }
 
-test("P0-o proves live media plus one-turn governed agent attention across three browsers", async ({
+test("P0-p proves live media attention plus bounded governed listening across three browsers", async ({
   browser
 }, testInfo) => {
   const humans: HumanBrowser[] = [];
@@ -436,6 +436,95 @@ test("P0-o proves live media plus one-turn governed agent attention across three
       charlieConsumerCount: await charlieVoiceConsumer.count()
     };
 
+    // P0-p: Vessie still has no ambient microphone route. Alice explicitly
+    // arms one bounded share, captures a short fake-mic segment, and submits it
+    // to local STT as ephemeral selected context.
+    await alice.page.getByTestId("grant-listening-share").click();
+    const listeningLease = alice.page.getByTestId(
+      "listening-lease-state"
+    );
+    await expect(listeningLease).toHaveAttribute(
+      "data-listening-state",
+      "active"
+    );
+
+    await alice.page.getByTestId("start-listening-share").click();
+    await alice.page.waitForTimeout(750);
+    await alice.page.getByTestId("stop-listening-share").click();
+
+    const listeningResult = alice.page.getByTestId(
+      "listening-share-result"
+    );
+    await expect(listeningResult).toBeVisible();
+    await expect(listeningResult).toHaveAttribute(
+      "data-stt-engine",
+      "deterministic"
+    );
+
+    const sharedSamples = Number(
+      (await listeningResult.getAttribute("data-sample-count")) ?? "0"
+    );
+    const sharedDurationMs = Number(
+      (await listeningResult.getAttribute("data-duration-ms")) ?? "0"
+    );
+    expect(sharedSamples).toBeGreaterThanOrEqual(1600);
+    expect(sharedSamples).toBeLessThanOrEqual(80000);
+    expect(sharedDurationMs).toBeGreaterThanOrEqual(100);
+    expect(sharedDurationMs).toBeLessThanOrEqual(5000);
+    await expect(listeningResult).toContainText(
+      "bounded listening share received"
+    );
+
+    await expect(listeningLease).toHaveAttribute(
+      "data-listening-state",
+      "consumed"
+    );
+
+    // Transcript content is returned only to the sharing human. Other room
+    // participants see content-free transparency status, not the transcript.
+    await expect(
+      bob.page.getByTestId("listening-share-result")
+    ).toHaveCount(0);
+    await expect(
+      charlie.page.getByTestId("listening-share-result")
+    ).toHaveCount(0);
+
+    await expect(
+      bob.page.getByTestId("listening-share-status")
+    ).toHaveAttribute("data-listening-status", "delivered");
+    await expect(
+      charlie.page.getByTestId("listening-share-status")
+    ).toHaveAttribute("data-listening-status", "delivered");
+
+    // A consumed listening lease cannot capture again without a new explicit grant.
+    await expect(
+      alice.page.getByTestId("start-listening-share")
+    ).toHaveCount(0);
+    await expect(
+      alice.page.getByTestId("grant-listening-share")
+    ).toBeVisible();
+
+    const listeningEvidence = {
+      leaseState:
+        await listeningLease.getAttribute("data-listening-state"),
+      engine:
+        await listeningResult.getAttribute("data-stt-engine"),
+      sampleCount: sharedSamples,
+      durationMs: sharedDurationMs,
+      bobTranscriptCount:
+        await bob.page.getByTestId("listening-share-result").count(),
+      charlieTranscriptCount:
+        await charlie.page.getByTestId("listening-share-result").count(),
+      bobStatus:
+        await bob.page
+          .getByTestId("listening-share-status")
+          .getAttribute("data-listening-status"),
+      charlieStatus:
+        await charlie.page
+          .getByTestId("listening-share-status")
+          .getAttribute("data-listening-status")
+    };
+
     // Revocation must remove the source and downstream Consumer, not merely
     // hide a button while audio authority remains alive.
     await alice.page.getByTestId("revoke-vessie-voice").click();
@@ -443,7 +532,7 @@ test("P0-o proves live media plus one-turn governed agent attention across three
     await expect(bobVoiceConsumer).toHaveCount(0);
 
     const report = {
-      schema: "p0-o.acceptance.1",
+      schema: "p0-p.acceptance.1",
       test: testInfo.title,
       generatedAt: new Date().toISOString(),
       matrix: {
@@ -463,6 +552,7 @@ test("P0-o proves live media plus one-turn governed agent attention across three
         first: firstAttentionEvidence,
         second: secondAttentionEvidence
       },
+      listeningEvidence,
       agentVoiceRevoked: {
         sourceCount: await bobVoiceSource.count(),
         consumerCount: await bobVoiceConsumer.count()
@@ -471,7 +561,7 @@ test("P0-o proves live media plus one-turn governed agent attention across three
 
     const reportPath = resolve(
       "test-results",
-      "p0o-media-acceptance.json"
+      "p0p-media-acceptance.json"
     );
     mkdirSync(dirname(reportPath), { recursive: true });
     writeFileSync(
@@ -480,7 +570,7 @@ test("P0-o proves live media plus one-turn governed agent attention across three
       "utf8"
     );
 
-    await testInfo.attach("p0o-media-acceptance", {
+    await testInfo.attach("p0p-media-acceptance", {
       body: Buffer.from(JSON.stringify(report, null, 2)),
       contentType: "application/json"
     });
