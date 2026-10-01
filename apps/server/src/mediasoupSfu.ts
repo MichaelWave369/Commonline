@@ -37,6 +37,7 @@ interface DirectAudioState {
   sequence: number;
   timestamp: number;
   ssrc: number;
+  lastSentAt?: number;
   queue: Promise<void>;
 }
 
@@ -430,6 +431,12 @@ export class MediasoupSfuAdapter {
     const frameSamples = 160;
 
     const send = async () => {
+      if (state.lastSentAt) {
+        const elapsedMs = Math.max(0, Date.now() - state.lastSentAt);
+        state.timestamp =
+          (state.timestamp + Math.round(elapsedMs * 8)) >>> 0;
+      }
+
       for (let offset = 0; offset < pcmu.length; offset += frameSamples) {
         if (current.producer.closed) {
           throw new Error("SFU_SOURCE_NOT_READY");
@@ -452,6 +459,7 @@ export class MediasoupSfuAdapter {
         state.sequence = (state.sequence + 1) & 0xffff;
         state.timestamp =
           (state.timestamp + payload.length) >>> 0;
+        state.lastSentAt = Date.now();
 
         if (offset + frameSamples < pcmu.length) {
           await new Promise((resolve) => setTimeout(resolve, 20));
