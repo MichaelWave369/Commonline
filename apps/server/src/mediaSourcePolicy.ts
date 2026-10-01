@@ -4,11 +4,11 @@ import type {
   PrincipalKind
 } from "@commonline/protocol";
 
-export const MEDIA_SOURCE_POLICY_VERSION = "p0-m.1";
+export const MEDIA_SOURCE_POLICY_VERSION = "p0-n.1";
 
 const policies: MediaSourcePolicy[] = [
   {
-    policyId: "source-policy/human-microphone/p0-m.1",
+    policyId: "source-policy/human-microphone/p0-n.1",
     kind: "human-microphone",
     requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
@@ -19,7 +19,7 @@ const policies: MediaSourcePolicy[] = [
     executionState: "executable"
   },
   {
-    policyId: "source-policy/sound-effect/p0-m.1",
+    policyId: "source-policy/sound-effect/p0-n.1",
     kind: "sound-effect",
     requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
@@ -30,7 +30,7 @@ const policies: MediaSourcePolicy[] = [
     executionState: "executable"
   },
   {
-    policyId: "source-policy/shared-music/p0-m.1",
+    policyId: "source-policy/shared-music/p0-n.1",
     kind: "shared-music",
     requiredAuthority: "SPEAK",
     allowedPublisherKinds: ["human"],
@@ -41,7 +41,7 @@ const policies: MediaSourcePolicy[] = [
     executionState: "reserved"
   },
   {
-    policyId: "source-policy/agent-voice/p0-m.1",
+    policyId: "source-policy/agent-voice/p0-n.1",
     kind: "agent-voice",
     requiredAuthority: "AGENT_VOICE_GRANT",
     allowedPublisherKinds: ["agent"],
@@ -49,10 +49,10 @@ const policies: MediaSourcePolicy[] = [
     retention: "ephemeral",
     recordingDefault: "not-authorized",
     maxInstancesPerPublisher: 1,
-    executionState: "reserved"
+    executionState: "executable"
   },
   {
-    policyId: "source-policy/system-tone/p0-m.1",
+    policyId: "source-policy/system-tone/p0-n.1",
     kind: "system-tone",
     requiredAuthority: "SERVICE_POLICY",
     allowedPublisherKinds: ["service"],
