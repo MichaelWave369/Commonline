@@ -582,6 +582,10 @@ export function useCommonlineRoom() {
 
       if (message.type === "listening_share_lease_state") {
         setListeningShareLease(message.lease);
+        if (message.lease.state === "active") {
+          setLastListeningShareStatus(null);
+          setLastListeningShareResult(null);
+        }
         setNotice(
           message.lease.state === "active"
             ? "Bounded listening-share lease granted."
