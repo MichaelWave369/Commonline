@@ -644,9 +644,10 @@ wss.on("connection", (socket) => {
     }
 
     if (message.type === "group_media_publish_source") {
+      const actorParticipantId = session.participantId;
       const room = service.getRoom(session.roomId);
       const participant = room?.participants.find(
-        (candidate) => candidate.id === session.participantId
+        (candidate) => candidate.id === actorParticipantId
       );
 
       if (
@@ -669,7 +670,7 @@ wss.on("connection", (socket) => {
           room &&
             hasCapability(
               room,
-              session.participantId,
+              actorParticipantId,
               "SPEAK"
             )
         )
@@ -687,7 +688,7 @@ wss.on("connection", (socket) => {
 
       const published = groupMedia.publishSource({
         roomId: session.roomId,
-        participantId: session.participantId,
+        participantId: actorParticipantId,
         kind: message.kind,
         label: message.label,
         policy: policyDecision.policy
@@ -975,12 +976,13 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      const actorParticipantId = session.participantId;
       const sourcePolicy = source
         ? mediaSourcePolicy(source.kind)
         : undefined;
       const room = service.getRoom(session.roomId);
       const participant = room?.participants.find(
-        (candidate) => candidate.id === session.participantId
+        (candidate) => candidate.id === actorParticipantId
       );
 
       if (
@@ -988,7 +990,7 @@ wss.on("connection", (socket) => {
         !sourcePolicy ||
         sourcePolicy.executionState !== "executable" ||
         source.policyId !== sourcePolicy.policyId ||
-        source.ownerParticipantId !== session.participantId ||
+        source.ownerParticipantId !== actorParticipantId ||
         message.kind !== "audio"
       ) {
         reject(socket, {
@@ -1008,7 +1010,7 @@ wss.on("connection", (socket) => {
         !room ||
         !hasCapability(
           room,
-          session.participantId,
+          actorParticipantId,
           sourcePolicy.requiredCapability
         )
       ) {
