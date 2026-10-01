@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Capability } from "@commonline/protocol";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
+import { useListeningShareCapture } from "./useListeningShareCapture";
 import { useSfuGroupAudio } from "./useSfuGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
 
@@ -57,6 +58,9 @@ export function App() {
     lastAgentVoiceUtteranceStatus,
     attentionLease,
     lastAgentTurnStatus,
+    listeningShareLease,
+    lastListeningShareStatus,
+    lastListeningShareResult,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -71,6 +75,9 @@ export function App() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    grantListeningShare,
+    revokeListeningShare,
+    submitListeningShare,
     grantAttentionLease,
     revokeAttentionLease,
     requestAgentTurn,
@@ -110,6 +117,12 @@ export function App() {
     unpublishSource: unpublishGroupSource,
     subscribeSource: subscribeGroupSource,
     unsubscribeSource: unsubscribeGroupSource
+  });
+
+  const listeningCapture = useListeningShareCapture({
+    lease: listeningShareLease,
+    agentParticipantId: "agent-vessie",
+    submit: submitListeningShare
   });
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -241,8 +254,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-o ATTENTION LEASE + AGENT TURN-TAKING</div>
-          <h1>{room?.purpose ?? "Give Vessie one bounded conversational turn without granting ambient speaking freedom"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-p GOVERNED PUSH-TO-SHARE LISTENING</div>
+          <h1>{room?.purpose ?? "Let Vessie hear one deliberately shared clip without ambient microphone access"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -778,6 +791,173 @@ export function App() {
             <p className="muted small">
               The durable voice grant authorizes Vessie's voice identity. The
               ephemeral attention lease authorizes one human-requested turn.
+            </p>
+          </div>
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Push-to-share listening</SectionTitle>
+          <p className="muted">
+            P0-p does not subscribe Vessie to your microphone. You explicitly grant
+            one short listening share, capture at most five seconds, and send that
+            bounded PCM segment to a local recognizer as selected context.
+          </p>
+
+          {!group.joined ? (
+            <p className="notice">
+              Join group media before sharing a bounded microphone segment with Vessie.
+            </p>
+          ) : listeningShareLease?.state === "active" ? (
+            <>
+              <div
+                className="delta"
+                data-testid="listening-lease-state"
+                data-listening-state={listeningShareLease.state}
+                data-listening-lease-id={listeningShareLease.leaseId}
+              >
+                <strong>Listening share armed</strong>
+                <div className="muted small">
+                  target {listeningShareLease.agentParticipantId}
+                  <br />
+                  max {listeningShareLease.maxDurationMs} ms
+                  <br />
+                  expires {listeningShareLease.expiresAt}
+                </div>
+              </div>
+
+              <div className="grant-grid">
+                <Badge>
+                  CAPTURE {listeningCapture.state.toUpperCase()}
+                </Badge>
+                <Badge>
+                  {Math.min(
+                    listeningCapture.elapsedMs,
+                    listeningShareLease.maxDurationMs
+                  )} ms
+                </Badge>
+              </div>
+
+              <div className="button-row">
+                {!listeningCapture.capturing ? (
+                  <Button
+                    data-testid="start-listening-share"
+                    onClick={() => void listeningCapture.start()}
+                    disabled={
+                      listeningCapture.state === "encoding" ||
+                      listeningCapture.state === "submitted"
+                    }
+                  >
+                    Start bounded share
+                  </Button>
+                ) : (
+                  <Button
+                    data-testid="stop-listening-share"
+                    onClick={() => void listeningCapture.stopAndSubmit()}
+                  >
+                    Stop + share with Vessie
+                  </Button>
+                )}
+                <Button
+                  data-testid="revoke-listening-share"
+                  onClick={() => {
+                    void listeningCapture.cancel();
+                    revokeListeningShare(listeningShareLease.leaseId);
+                  }}
+                  disabled={listeningCapture.state === "encoding"}
+                >
+                  Revoke listening share
+                </Button>
+              </div>
+
+              {listeningCapture.error && (
+                <p className="notice">{listeningCapture.error}</p>
+              )}
+            </>
+          ) : (
+            <>
+              {listeningShareLease && (
+                <div
+                  className="delta"
+                  data-testid="listening-lease-state"
+                  data-listening-state={listeningShareLease.state}
+                  data-listening-lease-id={listeningShareLease.leaseId}
+                >
+                  <strong>
+                    Previous listening share {listeningShareLease.state}
+                  </strong>
+                </div>
+              )}
+              <Button
+                data-testid="grant-listening-share"
+                onClick={() => grantListeningShare("agent-vessie")}
+                disabled={!group.joined || connection !== "connected"}
+              >
+                Let Vessie hear one short clip
+              </Button>
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Listening transparency</SectionTitle>
+          <div className="grant-grid">
+            <Badge>AMBIENT LISTENING ✕</Badge>
+            <Badge>AGENT SFU CONSUMER ✕</Badge>
+            <Badge>
+              SHARE {lastListeningShareStatus?.state?.toUpperCase() ?? "IDLE"}
+            </Badge>
+          </div>
+          <p className="muted">
+            Share status is visible without broadcasting transcript content. The
+            transcript result is returned only to the human who submitted the clip,
+            and neither audio nor transcript is added to durable room history.
+          </p>
+
+          {lastListeningShareStatus && (
+            <div
+              className="delta"
+              data-testid="listening-share-status"
+              data-listening-status={lastListeningShareStatus.state}
+            >
+              <strong>Bounded listening activity</strong>
+              <div className="muted small">
+                {lastListeningShareStatus.state}
+                <br />
+                human {lastListeningShareStatus.humanParticipantId}
+                <br />
+                target {lastListeningShareStatus.agentParticipantId}
+                <br />
+                share {lastListeningShareStatus.shareId}
+              </div>
+            </div>
+          )}
+
+          {lastListeningShareResult && (
+            <div
+              className="delta"
+              data-testid="listening-share-result"
+              data-stt-engine={lastListeningShareResult.engine}
+              data-sample-count={lastListeningShareResult.sampleCount}
+              data-duration-ms={lastListeningShareResult.durationMs}
+            >
+              <strong>Ephemeral transcript returned to you</strong>
+              <p>{lastListeningShareResult.transcript}</p>
+              <div className="muted small">
+                engine {lastListeningShareResult.engine}
+                <br />
+                {lastListeningShareResult.sampleCount} samples ·{" "}
+                {lastListeningShareResult.durationMs} ms
+              </div>
+            </div>
+          )}
+
+          <div className="delta">
+            <strong>AGENT PARTICIPANT ≠ AGENT MAY LISTEN</strong>
+            <p className="muted small">
+              Vessie receives only the transcript derived from the explicitly shared
+              clip. She is never added as a microphone subscriber in this rung.
             </p>
           </div>
         </Card>
@@ -1364,10 +1544,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-o adds an ephemeral one-turn attention lease above P0-n voice capability.
-        A human in live group media may grant Vessie one directed turn; the lease belongs
-        to that human, expires, and is consumed exactly once. Voice authority and listener
-        subscriptions remain independent, and prompt/reply content stays out of durable history.
+        P0-p adds governed listening without ambient ears. A human explicitly grants one
+        bounded push-to-share lease, captures at most five seconds of microphone audio, and
+        sends that clip to a local speech recognizer as selected context for Vessie. Audio and
+        transcript remain ephemeral; Vessie still receives no live microphone subscription.
       </footer>
     </main>
   );
