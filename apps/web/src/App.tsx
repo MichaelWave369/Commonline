@@ -262,7 +262,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-s MEMBERSHIP HISTORY FLOOR</div>
+          <div className="eyebrow">COMMONLINE · P0-t END-TO-END EXPERIENCE PROOF</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -1567,6 +1567,7 @@ export function App() {
             aria-label="Agent task"
           />
           <Button
+            data-testid="submit-governed-work"
             onClick={() => submitWork(taskText)}
             disabled={
               connection !== "connected" ||
@@ -1582,7 +1583,13 @@ export function App() {
               .slice()
               .reverse()
               .map((item) => (
-                <div className="timeline-item" key={item.id}>
+                <div
+                  className="timeline-item"
+                  key={item.id}
+                  data-testid="work-item"
+                  data-work-id={item.id}
+                  data-work-status={item.status}
+                >
                   <strong>{item.status.toUpperCase()}</strong>
                   <span>{item.prompt}</span>
                   <span className="muted small">{item.id}</span>
@@ -1604,7 +1611,14 @@ export function App() {
                   (receipt) => receipt.artifactId === artifact.id
                 );
                 return (
-                  <article className="artifact" key={artifact.id}>
+                  <article
+                    className="artifact"
+                    key={artifact.id}
+                    data-testid="proposal-artifact"
+                    data-artifact-id={artifact.id}
+                    data-artifact-status={artifact.status}
+                    data-work-id={artifact.sourceWorkId}
+                  >
                     <div className="artifact-head">
                       <strong>{artifact.title}</strong>
                       <Badge>{artifact.status}</Badge>
@@ -1615,6 +1629,8 @@ export function App() {
                     </div>
                     {artifact.status === "proposed" && (
                       <Button
+                        data-testid="accept-proposal"
+                        data-artifact-id={artifact.id}
                         onClick={() =>
                           acceptOutcome(artifact.sourceWorkId, artifact.id)
                         }
@@ -1653,7 +1669,7 @@ export function App() {
             </ul>
           )}
           {lastAcceptance && (
-            <div className="delta">
+            <div className="delta" data-testid="latest-acceptance">
               <strong>Latest acceptance</strong>
               <p>{lastAcceptance.receiptId}</p>
               <div className="muted small">
@@ -1747,10 +1763,11 @@ export function App() {
       </section>
 
       <footer>
-        P0-s hardens that continuity loop with a membership history floor. A participant may inspect
-        current authorized room state, but joining does not retroactively authorize old durable
-        event replay. Known identities can resume post-membership changes; pre-membership history
-        remains unavailable unless a future explicit history-sharing authority is designed.
+        P0-t proves the existing P0 pieces as one executable experience chain: two humans keep live
+        governed media flowing, bounded silent work completes during the episode, explicit acceptance
+        creates the durable outcome, and a later reconnect resumes from selected room state rather
+        than reconstructed speech. Human-value comparison against a voice + notes baseline remains a
+        separate pilot question, not something CI can manufacture.
       </footer>
     </main>
   );
