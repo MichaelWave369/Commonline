@@ -25,6 +25,7 @@ export function App() {
     lastAuthorityTransfer,
     agentStatuses,
     rtcInbox,
+    rtcSessionInbox,
     rtcConfig,
     notice,
     connect,
@@ -32,15 +33,20 @@ export function App() {
     submitWork,
     acceptOutcome,
     transferAcceptAuthority,
+    openRtcCall,
     sendRtcSignal,
+    consumeRtcSession,
     consumeRtcSignal
   } = roomSession;
 
   const audio = usePeerAudio({
     roomConnected: connection === "connected",
     rtcConfig,
+    rtcSessionInbox,
     rtcInbox,
+    consumeRtcSession,
     consumeRtcSignal,
+    openRtcCall,
     sendRtcSignal
   });
 
@@ -152,14 +158,17 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-g INTERNET MEDIA HARDENING</div>
-          <h1>{room?.purpose ?? "Make the governed call survive hostile networks"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-h MEDIA SESSION + PERFECT NEGOTIATION</div>
+          <h1>{room?.purpose ?? "Make each call an exact ephemeral object"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
           <Badge>IDENTITY {identityState.toUpperCase()}</Badge>
           <Badge>AUDIO {audio.state.toUpperCase()}</Badge>
           <Badge>ROUTE {audio.diagnostics.metrics.route.toUpperCase()}</Badge>
+          {audio.callSession && (
+            <Badge>CALL g{audio.callSession.generation}</Badge>
+          )}
           {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
@@ -455,6 +464,20 @@ export function App() {
             <Badge>POLICY {audio.diagnostics.iceTransportPolicy.toUpperCase()}</Badge>
           </div>
 
+          {audio.callSession && (
+            <div className="delta">
+              <strong>Ephemeral media session</strong>
+              <p>{audio.callSession.callId}</p>
+              <div className="muted small">
+                generation {audio.callSession.generation}
+                {" · "}
+                {audio.callSession.polite ? "polite peer" : "impolite peer"}
+                <br />
+                peer {audio.callSession.peerParticipantId}
+              </div>
+            </div>
+          )}
+
           <div className="delta">
             <strong>Selected path</strong>
             <p>
@@ -649,10 +672,9 @@ export function App() {
       </section>
 
       <footer>
-        P0-g hardens real internet calling with authenticated ICE configuration, optional
-        TURN relay credentials, secure signaling defaults, call-path diagnostics, setup
-        timeouts, and cleanup after network failure. Media connectivity still grants no
-        Commonline authority.
+        P0-h makes each one-to-one call an exact ephemeral media session with a call ID,
+        generation, deterministic polite/impolite roles, perfect-negotiation glare handling,
+        and stale-signal rejection. Media sessions remain outside durable room history.
       </footer>
     </main>
   );
