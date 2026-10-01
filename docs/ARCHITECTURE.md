@@ -196,3 +196,34 @@ The private key remains browser-side. The server stores only the public key and 
 The room transition writes a grant revocation receipt, replacement grant, authority-transfer receipt, role projection, and event in the same durable SQLite transaction.
 
 The immutable receipt chain, not the role string, is the authority history.
+
+
+## P0-g internet media plane
+
+The room service now provides authenticated ephemeral ICE configuration after a participant has proved identity and joined the room.
+
+```text
+authenticated participant
+      ↓
+rtc_config_request
+      ↓
+STUN / TURN configuration
+      ↓
+RTCPeerConnection
+      ↓
+selected direct or relay path
+```
+
+TURN credential material is transport configuration, not room authority or room history.
+
+Coturn REST-style credentials can be minted from a server-only shared secret and expire automatically. The browser refreshes the configuration before expiry.
+
+### Failure boundary
+
+WebRTC failure must clean up media resources without mutating durable undertaking state.
+
+Call setup, disconnected-peer grace, unanswered ringing, microphone loss, and failed ICE/peer states are handled in the browser media plane. Durable room state remains available even if the call dies.
+
+### Diagnostics boundary
+
+Candidate types and WebRTC stats are local observational telemetry. P0-g does not add them to SQLite, room events, or resumption deltas.
