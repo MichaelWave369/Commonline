@@ -31,7 +31,7 @@ import {
   PersistenceConflictError
 } from "./roomStore";
 
-export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-m.1" as const;
+export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-n.1" as const;
 const MIGRATABLE_SCHEMA_PAIRS = new Set([
   "p0-e.1|p0-d.1",
   "p0-f.1|p0-f.1",
@@ -39,7 +39,8 @@ const MIGRATABLE_SCHEMA_PAIRS = new Set([
   "p0-h.1|p0-h.1",
   "p0-i.1|p0-i.1",
   "p0-j.1|p0-j.1",
-  "p0-k.1|p0-k.1"
+  "p0-k.1|p0-k.1",
+  "p0-m.1|p0-m.1"
 ]);
 
 type SqlValue = string | number | null;
