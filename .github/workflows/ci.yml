@@ -21,3 +21,29 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+
+  media-acceptance:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium runtime
+        run: npx playwright install --with-deps chromium
+      - name: Run P0-l live media acceptance
+        run: npm run test:media-acceptance
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0l-media-acceptance
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
