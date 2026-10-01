@@ -361,3 +361,32 @@ SFU + explicit subscriptions
 The bootstrap bridge is intentionally one-time. It does not make ACCEPT_OUTCOME a general media-delegation capability.
 
 Renderer state and synthesized audio remain outside durable storage. A renderer may consume authority but cannot create it.
+
+
+## P0-n local renderer and direct RTP path
+
+P0-n adds a capability plane downstream of durable P0-m authority:
+
+```text
+AgentVoiceGrantReceipt
+        ↓
+AgentVoiceRuntime
+        ↓
+LocalVoiceRenderer
+        ↓
+PCM16
+        ↓
+PCMU RTP
+        ↓
+mediasoup DirectTransport
+        ↓
+agent-voice Producer
+        ↓
+explicit human subscriptions
+```
+
+The default renderer is disabled. Piper is an optional local CLI adapter backed by a caller-provided local model. CI uses an explicit deterministic tone renderer to exercise the same PCM-to-RTP path without downloading a model.
+
+The mediasoup Router supports Opus for browser microphone/audio producers and PCMU for server-local agent audio. Agent voice does not require the agent to masquerade as a human WebRTC participant.
+
+Renderer status and utterance progress are ephemeral. Voice authority remains durable and upstream.
