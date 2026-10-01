@@ -233,7 +233,9 @@ export class RoomService {
     // P0-s history floor: first membership does not inherit the room's
     // pre-membership event history. A reconnecting participant cannot rewind
     // acknowledgement to zero to escape that floor.
-    const historyFloorVersion = firstMembershipEvent?.version;
+    const historyFloorVersion =
+      firstMembershipEvent?.version ??
+      (knownParticipant ? record.room.version + 1 : undefined);
     const resumeAfterVersion =
       historyFloorVersion === undefined
         ? input.acknowledgedVersion
