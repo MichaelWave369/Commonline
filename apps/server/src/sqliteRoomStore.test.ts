@@ -261,6 +261,7 @@ describe("P0-e SQLite durability", () => {
     expect(Object.keys(store.durableDebugRows())).not.toContain("sessions");
     expect(Object.keys(store.durableDebugRows())).not.toContain("rtc_signaling");
     expect(Object.keys(store.durableDebugRows())).not.toContain("agent_status");
+    expect(Object.keys(store.durableDebugRows())).not.toContain("media_sessions");
 
     store.close();
   });
