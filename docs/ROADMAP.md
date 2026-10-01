@@ -121,3 +121,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-n local agent voice renderer with Piper adapter, direct PCMU RTP, and revocation-tested delivery
 
 - P0-o ephemeral one-turn attention leases and directed agent turn-taking
+
+- P0-p bounded push-to-share listening with local STT and no ambient agent microphone access
