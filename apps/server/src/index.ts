@@ -4,7 +4,6 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AgentWorkStatusMessage,
   type ClientMessage,
-  type GroupRtcSignalRelayMessage,
   type IntentRejectedMessage,
   type RoomEventMessage,
   type RoomSnapshotMessage,
@@ -21,6 +20,10 @@ import {
   isPolitePeer,
   MediaSessionRegistry
 } from "./mediaSessionRegistry";
+import {
+  MediasoupSfuAdapter,
+  mediasoupConfigFromEnv
+} from "./mediasoupSfu";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
@@ -39,6 +42,9 @@ const service = new RoomService(
 );
 const workPlane = new EphemeralWorkPlane();
 const agent = new MockSilentAgent("Vessie");
+const sfu = await MediasoupSfuAdapter.create(
+  mediasoupConfigFromEnv()
+);
 
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
@@ -50,7 +56,9 @@ const httpServer = createServer((request, response) => {
         schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
         storage: "sqlite",
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
-        identity: "p256-challenge-response"
+        identity: "p256-challenge-response",
+        groupMedia: "mediasoup-p0",
+        sfu: sfu.status()
       })
     );
     return;
@@ -77,6 +85,54 @@ function broadcast(roomId: string, message: ServerMessage, except?: WebSocket) {
   for (const socket of sockets) {
     if (socket !== except) send(socket, message);
   }
+}
+
+function reconcileGroupMedia(roomId: string) {
+  const current = groupMedia.current(roomId);
+  if (current) {
+    sfu.reconcile(current);
+  } else {
+    sfu.closeRoom(roomId);
+  }
+}
+
+function sfuFailureCode(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error);
+
+  if (message.includes("SFU_TRANSPORT_NOT_FOUND")) {
+    return "SFU_TRANSPORT_NOT_FOUND" as const;
+  }
+  if (message.includes("SFU_SOURCE_NOT_READY")) {
+    return "SFU_SOURCE_NOT_READY" as const;
+  }
+  if (message.includes("SFU_CANNOT_CONSUME")) {
+    return "SFU_CANNOT_CONSUME" as const;
+  }
+
+  return "SFU_NOT_READY" as const;
+}
+
+function activeGroupSession(input: {
+  roomId: string;
+  participantId: string;
+  mediaSessionId: string;
+  generation: number;
+}) {
+  const current = groupMedia.currentForParticipant(
+    input.roomId,
+    input.participantId
+  );
+
+  if (
+    !current ||
+    current.mediaSessionId !== input.mediaSessionId ||
+    current.generation !== input.generation
+  ) {
+    return undefined;
+  }
+
+  return current;
 }
 
 function broadcastGroupMediaState(roomId: string, requestId: string) {
