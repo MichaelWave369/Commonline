@@ -407,3 +407,18 @@ A listening-share lease is ephemeral, human-owned, target-agent-specific, expire
 The server emits content-free `listening_share_status` messages to the room and returns `listening_share_result`, including transcript text, only to the submitting human.
 
 The listening path is selected-context delivery, not a group-media subscription. The target agent must hold `READ_SELECTED_CONTEXT`; it receives no SFU microphone Consumer.
+
+
+## P0-q explicit exchange-response profile
+
+Wire schema: `p0-q.1`.
+
+Every successful bounded listening share now returns a short-lived `ConversationExchange` public view alongside the sharer's private transcript result.
+
+The exchange contains no transcript text. Its states are `heard`, `responded`, and `expired`.
+
+`request_exchange_response` binds the exact exchange ID, exact one-turn attention lease ID, and target agent. A heard exchange alone cannot cause TTS or RTP.
+
+The reply request succeeds only when the exchange belongs to the requesting human, the exchange is still heard, the target has active voice authority, and the separate attention lease is valid and unused.
+
+Room participants may observe content-free `exchange_response_status` messages. Transcript and generated reply content remain excluded from that status plane.
