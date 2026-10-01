@@ -422,3 +422,32 @@ The exchange contains no transcript text. Its states are `heard`, `responded`, a
 The reply request succeeds only when the exchange belongs to the requesting human, the exchange is still heard, the target has active voice authority, and the separate attention lease is valid and unused.
 
 Room participants may observe content-free `exchange_response_status` messages. Transcript and generated reply content remain excluded from that status plane.
+
+
+## P0-u external-effect firewall profile
+
+Wire schema: `p0-u.1`.
+
+P0-u adds:
+
+```text
+request_external_effect
+external_effect_status
+```
+
+The request binds:
+
+- current room version
+- stable effect request ID
+- accepted artifact ID
+- exact execution-authority grant ID
+- effect kind `demo-marker`
+- target `local-proof-sink`
+
+The server refuses the request unless the artifact has a durable acceptance receipt and the caller supplies an exact active `EXECUTE_EXTERNAL_EFFECT` grant belonging to that caller.
+
+P0 issues no execution grants. Normal product behavior is therefore `external_effect_status.state = blocked` with `NOT_AUTHORIZED`.
+
+The local proof sink is process-local and intentionally incapable of network, payment, messaging, deployment, filesystem, or device effects.
+
+The SQLite table layout remains `p0-q.1`; only stored wire metadata advances to `p0-u.1`.
