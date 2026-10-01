@@ -305,3 +305,15 @@ These messages are ephemeral and never increment room version.
 ### SFU compatibility
 
 The source/subscription objects are intended to survive a future transport swap from `mesh-p0` to an SFU adapter. No SFU is permitted to infer durable room authority merely from media routing state.
+
+## P0-j mediasoup SFU profile
+
+Wire schema: p0-j.1.
+
+The existing group join, leave, publish, unpublish, subscribe, and unsubscribe intents remain authoritative. Router mode is now mediasoup-p0.
+
+Authenticated SFU requests cover router capabilities, send/receive transport creation, DTLS connection, Producer creation, Consumer creation, and Consumer resume. Each operation binds to the current group mediaSessionId and generation.
+
+Producer creation requires active SPEAK plus ownership of the published source. Consumer creation requires active RECEIVE_MEDIA plus an explicit directed subscription to the requested source.
+
+Legacy group_rtc_signal is rejected in P0-j. Multiparty audio must traverse the governed SFU. SFU request/response traffic remains ephemeral and never increments room version.
