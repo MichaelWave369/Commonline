@@ -125,3 +125,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-p bounded push-to-share listening with local STT and no ambient agent microphone access
 
 - P0-q explicit heard-context exchange binding with separate attention-authorized reply
+
+- P0-r deterministic selective resumption brief from durable state + resume delta
