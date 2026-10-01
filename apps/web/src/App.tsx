@@ -51,6 +51,9 @@ export function App() {
     lastEvent,
     lastAcceptance,
     lastAuthorityTransfer,
+    lastVoiceAuthorityBootstrap,
+    lastAgentVoiceGrant,
+    lastAgentVoiceRevocation,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -62,6 +65,9 @@ export function App() {
     submitWork,
     acceptOutcome,
     transferAcceptAuthority,
+    bootstrapAgentVoiceAuthority,
+    grantAgentVoice,
+    revokeAgentVoice,
     openRtcCall,
     sendRtcSignal,
     joinGroupMedia,
@@ -144,8 +150,19 @@ export function App() {
 
   const acceptGrant = activeGrant("ACCEPT_OUTCOME");
   const canAccept = Boolean(acceptGrant);
+  const voiceManagerGrant = activeGrant("MANAGE_AGENT_VOICE");
+  const canManageAgentVoice = Boolean(voiceManagerGrant);
   const canSpeak = Boolean(activeGrant("SPEAK"));
   const canReceiveMedia = Boolean(activeGrant("RECEIVE_MEDIA"));
+
+  const activeVessieVoiceGrant = room?.agentVoiceGrants.find(
+    (grant) =>
+      grant.agentParticipantId === "agent-vessie" &&
+      !room.agentVoiceRevocations.some(
+        (revocation) => revocation.voiceGrantId === grant.voiceGrantId
+      ) &&
+      (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
+  );
 
   const transferTargets =
     room?.participants.filter(
@@ -208,8 +225,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-l LIVE MEDIA ACCEPTANCE</div>
-          <h1>{room?.purpose ?? "Prove governed subscriptions against live SFU packet evidence"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-m AGENT VOICE AUTHORITY</div>
+          <h1>{room?.purpose ?? "Separate permission to speak as an agent from the renderer that may someday do it"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -341,6 +358,7 @@ export function App() {
             <Badge>SUBMIT {activeGrant("SUBMIT_WORK") ? "✓" : "✕"}</Badge>
             <Badge>SPEAK {canSpeak ? "✓" : "✕"}</Badge>
             <Badge>ACCEPT {canAccept ? "✓" : "✕"}</Badge>
+            <Badge>MANAGE AGENT VOICE {canManageAgentVoice ? "✓" : "✕"}</Badge>
           </div>
           {me && (
             <p className="muted small">
@@ -396,6 +414,143 @@ export function App() {
                 issued {lastAuthorityTransfer.issuedGrantId}
                 <br />
                 room v{lastAuthorityTransfer.committedVersion}
+              </div>
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Agent voice authority</SectionTitle>
+          {!room ? (
+            <p className="muted">Join the room to inspect agent voice authority.</p>
+          ) : room.voiceAuthorityBootstraps.length === 0 ? (
+            <>
+              <p className="muted">
+                No participant can grant agent voice yet. P0-m requires one explicit,
+                durable bootstrap from the current ACCEPT_OUTCOME holder before
+                MANAGE_AGENT_VOICE exists.
+              </p>
+              <Button
+                onClick={() => {
+                  if (acceptGrant) {
+                    bootstrapAgentVoiceAuthority(acceptGrant.grantId);
+                  }
+                }}
+                disabled={!acceptGrant || connection !== "connected"}
+              >
+                Bootstrap voice authority
+              </Button>
+            </>
+          ) : !canManageAgentVoice ? (
+            <p className="muted">
+              Voice management was already bootstrapped to another authority holder.
+              Identity and ordinary SPEAK do not imply permission to manage agent voice.
+            </p>
+          ) : activeVessieVoiceGrant ? (
+            <>
+              <div className="delta">
+                <strong>Vessie voice grant active</strong>
+                <p>
+                  voice <code>{activeVessieVoiceGrant.voiceId}</code>
+                </p>
+                <div className="muted small">
+                  grant {activeVessieVoiceGrant.voiceGrantId}
+                  <br />
+                  audience {activeVessieVoiceGrant.audienceMode}
+                  <br />
+                  room v{activeVessieVoiceGrant.committedVersion}
+                </div>
+              </div>
+              <Button
+                onClick={() => {
+                  if (voiceManagerGrant) {
+                    revokeAgentVoice(
+                      activeVessieVoiceGrant.voiceGrantId,
+                      voiceManagerGrant.grantId
+                    );
+                  }
+                }}
+                disabled={!voiceManagerGrant || connection !== "connected"}
+              >
+                Revoke Vessie voice
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                You hold MANAGE_AGENT_VOICE, but Vessie has no active voice grant.
+                Granting the voice binds one stable voice ID and explicit-subscription
+                audience policy. It still does not activate a TTS renderer.
+              </p>
+              <Button
+                onClick={() => {
+                  if (voiceManagerGrant) {
+                    grantAgentVoice(
+                      "agent-vessie",
+                      "vessie-local-v1",
+                      voiceManagerGrant.grantId
+                    );
+                  }
+                }}
+                disabled={!voiceManagerGrant || connection !== "connected"}
+              >
+                Grant Vessie local voice
+              </Button>
+            </>
+          )}
+
+          {lastVoiceAuthorityBootstrap && (
+            <div className="delta">
+              <strong>Voice authority bootstrap receipt</strong>
+              <div className="muted small">
+                issued {lastVoiceAuthorityBootstrap.issuedGrantId}
+                <br />
+                from ACCEPT {lastVoiceAuthorityBootstrap.acceptAuthorityGrantId}
+                <br />
+                room v{lastVoiceAuthorityBootstrap.committedVersion}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Voice renderer boundary</SectionTitle>
+          <div className="grant-grid">
+            <Badge>VESSIE PARTICIPANT ✓</Badge>
+            <Badge>
+              VOICE GRANT {activeVessieVoiceGrant ? "✓" : "✕"}
+            </Badge>
+            <Badge>RENDERER NOT WIRED</Badge>
+            <Badge>LIVE AGENT AUDIO ✕</Badge>
+          </div>
+          <p className="muted">
+            P0-m intentionally stops before synthesis. A future renderer must present
+            the active voice grant, matching agent ID, matching voice ID, and current
+            source policy before an agent-voice source can become executable.
+          </p>
+          {lastAgentVoiceGrant && (
+            <div className="delta">
+              <strong>Latest agent-voice grant receipt</strong>
+              <div className="muted small">
+                {lastAgentVoiceGrant.agentParticipantId}
+                <br />
+                voice {lastAgentVoiceGrant.voiceId}
+                <br />
+                grant {lastAgentVoiceGrant.voiceGrantId}
+              </div>
+            </div>
+          )}
+          {lastAgentVoiceRevocation && (
+            <div className="delta">
+              <strong>Latest voice revocation receipt</strong>
+              <div className="muted small">
+                revoked {lastAgentVoiceRevocation.voiceGrantId}
+                <br />
+                receipt {lastAgentVoiceRevocation.voiceRevocationId}
+                <br />
+                room v{lastAgentVoiceRevocation.committedVersion}
               </div>
             </div>
           )}
@@ -499,7 +654,8 @@ export function App() {
                     </div>
                     {participant.id === "agent-vessie" && (
                       <div className="muted small">
-                        status: {agentStatus?.state ?? "idle"} · no live media grant
+                        status: {agentStatus?.state ?? "idle"} · voice authority {" "}
+                        {activeVessieVoiceGrant ? activeVessieVoiceGrant.voiceId : "none"}
                       </div>
                     )}
                   </div>
@@ -688,7 +844,7 @@ export function App() {
                   <div>
                     <strong>{policy.kind}</strong>
                     <div className="muted small">
-                      {policy.executionState} · requires {policy.requiredCapability}
+                      {policy.executionState} · requires {policy.requiredAuthority}
                       <br />
                       publishers: {policy.allowedPublisherKinds.join(", ")}
                       <br />
@@ -982,9 +1138,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-l adds a repeatable live-media acceptance harness above P0-k. Browser tests can
-        prove source-specific subscription matrices against real mediasoup Consumers and
-        packet counters while all acceptance evidence remains observational and ephemeral.
+        P0-m adds durable, revocable agent-voice authority without activating synthesis.
+        ACCEPT_OUTCOME may explicitly bootstrap a separate MANAGE_AGENT_VOICE capability;
+        after that, voice grants bind agent ID, voice ID, and explicit-subscription audience.
+        The renderer remains a later capability and cannot infer authority from this UI.
       </footer>
     </main>
   );
