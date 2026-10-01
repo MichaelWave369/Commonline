@@ -5,6 +5,7 @@ import { useCommonlineRoom } from "./useCommonlineRoom";
 import { useListeningShareCapture } from "./useListeningShareCapture";
 import { useSfuGroupAudio } from "./useSfuGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
+import { buildResumptionBrief } from "./resumptionBrief";
 
 function GroupRemoteAudio({
   stream,
@@ -246,6 +247,11 @@ export function App() {
     return statuses.at(-1) ?? null;
   }, [agentStatuses]);
 
+  const resumptionBrief = useMemo(
+    () => (room ? buildResumptionBrief(room, resumeDelta) : null),
+    [room, resumeDelta]
+  );
+
   function leaveEpisode() {
     if (audio.state !== "idle") audio.hangup();
     if (group.joined) group.leave();
@@ -256,7 +262,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-q EXPLICIT HEAR → REPLY BINDING</div>
+          <div className="eyebrow">COMMONLINE · P0-r SELECTIVE RESUMPTION BRIEF</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -1658,30 +1664,91 @@ export function App() {
         </Card>
 
         <Card>
-          <SectionTitle>Resume delta</SectionTitle>
-          {resumeDelta.length === 0 ? (
-            <p className="muted">No missed durable events since this session last acknowledged state.</p>
+          <SectionTitle>Selective resumption brief</SectionTitle>
+          {!resumptionBrief ? (
+            <p className="muted">Join the room to derive continuity from durable state.</p>
           ) : (
-            <ul>
-              {resumeDelta.map((event) => (
-                <li key={event.id}>
-                  v{event.version}: {event.summary}
-                </li>
-              ))}
-            </ul>
+            <div data-testid="resumption-brief">
+              <div className="grant-grid">
+                <Badge>ACCEPTED {resumptionBrief.acceptedWork.length}</Badge>
+                <Badge>UNRESOLVED {resumptionBrief.unresolvedWork.length}</Badge>
+                <Badge>MISSED {resumptionBrief.missedDurableEvents.length}</Badge>
+              </div>
+
+              <div className="delta" data-testid="resumption-next-action">
+                <strong>Next action</strong>
+                <p>{resumptionBrief.nextAction.summary}</p>
+                <div className="muted small">
+                  derived at room v{resumptionBrief.roomVersion} · {resumptionBrief.nextAction.kind}
+                </div>
+              </div>
+
+              <div className="timeline" data-testid="resumption-accepted-work">
+                <strong>Accepted work</strong>
+                {resumptionBrief.acceptedWork.length === 0 ? (
+                  <p className="muted small">No accepted artifacts yet.</p>
+                ) : (
+                  resumptionBrief.acceptedWork.map((item) => (
+                    <div className="timeline-item" key={item.artifactId}>
+                      <strong>ACCEPTED</strong>
+                      <span>{item.title}</span>
+                      <span className="muted small">
+                        work {item.workItemId} · artifact {item.artifactId}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="timeline" data-testid="resumption-unresolved-work">
+                <strong>Unresolved work</strong>
+                {resumptionBrief.unresolvedWork.length === 0 ? (
+                  <p className="muted small">No unresolved bounded work.</p>
+                ) : (
+                  resumptionBrief.unresolvedWork.map((item) => (
+                    <div className="timeline-item" key={item.workItemId}>
+                      <strong>{item.status.toUpperCase()}</strong>
+                      <span>{item.prompt}</span>
+                      {item.proposedArtifactTitles.length > 0 && (
+                        <span className="muted small">
+                          proposal {item.proposedArtifactTitles.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="timeline" data-testid="resumption-missed-events">
+                <strong>Missed durable events</strong>
+                {resumptionBrief.missedDurableEvents.length === 0 ? (
+                  <p className="muted small">
+                    No missed durable events since this session last acknowledged state.
+                  </p>
+                ) : (
+                  resumptionBrief.missedDurableEvents.map((event) => (
+                    <div className="timeline-item" key={event.id}>
+                      <strong>ROOM v{event.version}</strong>
+                      <span>{event.summary}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           )}
           <p className="muted small">
-            Authentication challenges, private keys, recovery secrets, sessions, scratch,
-            WebRTC signaling, and audio are not room-event history.
+            P0-r derives this view only from durable room state and durable room events.
+            Audio, listening transcripts, generated replies, attention leases, scratch,
+            sessions, signaling, private keys, and recovery secrets are not inputs.
           </p>
         </Card>
       </section>
 
       <footer>
-        P0-q binds a delivered listening share to one ephemeral conversation exchange.
-        Hearing that exchange does not authorize a reply: Vessie still needs active voice
-        authority, a fresh one-turn attention lease from the same human, and explicit listener
-        subscriptions before any response RTP can exist.
+        P0-r closes the first CommonLine continuity loop without turning conversation into a
+        transcript archive. The resume brief is deterministic and derived from durable accepted
+        outcomes, unresolved bounded work, and missed durable room events. P0-q hearing and reply
+        exchanges remain ephemeral and outside this continuity view.
       </footer>
     </main>
   );
