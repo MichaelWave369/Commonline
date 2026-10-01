@@ -541,3 +541,25 @@ P0-l is an acceptance rung rather than a wire/storage change. It keeps `p0-k.1` 
 The CI run retains a JSON evidence artifact plus Playwright failure traces/screenshots/video when applicable.
 
 See [MEDIA_ACCEPTANCE_P0L.md](MEDIA_ACCEPTANCE_P0L.md).
+
+
+## P0-m — agent voice authority
+
+P0-m makes agent speech permission explicit before any TTS renderer is activated.
+
+Implemented:
+
+- MANAGE_AGENT_VOICE capability
+- one-time explicit bootstrap from current ACCEPT_OUTCOME authority
+- durable bootstrap receipt
+- voice-ID-bound agent voice grant receipt
+- explicit-subscription audience binding
+- optional voice grant expiry
+- durable manual revocation receipt
+- restart persistence
+- agent voice source policy now requires AGENT_VOICE_GRANT
+- Vessie voice profile `vessie-local-v1`
+- renderer remains explicitly not wired
+- P0-k -> P0-m schema migration
+
+See [AGENT_VOICE_AUTHORITY_P0M.md](AGENT_VOICE_AUTHORITY_P0M.md).
