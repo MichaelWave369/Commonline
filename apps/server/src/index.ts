@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { MockSilentAgent } from "@commonline/agent-runtime";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
+  type AgentVoiceUtteranceStatusMessage,
   type AgentWorkStatusMessage,
   type ClientMessage,
   type IntentRejectedMessage,
@@ -15,6 +16,7 @@ import {
 import { hasCapability, SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { agentVoiceProfile } from "./agentVoicePolicy";
+import { AgentVoiceRuntime } from "./agentVoiceRuntime";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
@@ -30,6 +32,7 @@ import {
   MediasoupSfuAdapter,
   mediasoupConfigFromEnv
 } from "./mediasoupSfu";
+import { createLocalVoiceRenderer } from "./localVoiceRenderer";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
@@ -48,6 +51,7 @@ const service = new RoomService(
 );
 const workPlane = new EphemeralWorkPlane();
 const agent = new MockSilentAgent("Vessie");
+const voiceRenderer = createLocalVoiceRenderer();
 const sfu = await MediasoupSfuAdapter.create(
   mediasoupConfigFromEnv()
 );
@@ -64,8 +68,9 @@ const httpServer = createServer((request, response) => {
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
         identity: "p256-challenge-response",
         groupMedia: "mediasoup-p0",
-        mediaSourcePolicy: "p0-m.1",
+        mediaSourcePolicy: "p0-n.1",
         agentVoiceAuthority: "p0-m.1",
+        agentVoiceRenderer: voiceRenderer.status(),
         sfu: sfu.status()
       })
     );
@@ -80,6 +85,13 @@ const roomSockets = new Map<string, Set<WebSocket>>();
 const sessions = new SessionRegistry<WebSocket>();
 const mediaSessions = new MediaSessionRegistry();
 const groupMedia = new GroupMediaRegistry();
+const agentVoiceRuntime = new AgentVoiceRuntime(
+  service,
+  groupMedia,
+  sfu,
+  voiceRenderer,
+  agent
+);
 
 function send(socket: WebSocket, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -176,6 +188,49 @@ function groupMediaPermission(
   );
 }
 
+function voiceFailureCode(error: unknown) {
+  const code =
+    error instanceof Error ? error.message : String(error);
+
+  if (
+    code === "NOT_AUTHORIZED" ||
+    code === "ROOM_NOT_FOUND" ||
+    code === "INVALID_INTENT" ||
+    code === "VOICE_GRANT_NOT_FOUND" ||
+    code === "VOICE_RENDERER_UNAVAILABLE" ||
+    code === "VOICE_UTTERANCE_BUSY" ||
+    code === "VOICE_GROUP_MEDIA_REQUIRED"
+  ) {
+    return code;
+  }
+
+  return "VOICE_RENDERER_UNAVAILABLE" as const;
+}
+
+function broadcastVoiceStatus(input: {
+  requestId: string;
+  roomId: string;
+  utteranceId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: AgentVoiceUtteranceStatusMessage["state"];
+  errorCode?: string;
+}) {
+  const message: AgentVoiceUtteranceStatusMessage = {
+    type: "agent_voice_utterance_status",
+    ...input
+  };
+  broadcast(input.roomId, message);
+}
+
+async function reconcileAgentVoice(roomId: string, requestId: string) {
+  await agentVoiceRuntime.reconcile(roomId);
+  if (groupMedia.current(roomId)) {
+    broadcastGroupMediaState(roomId, requestId);
+  }
+}
+
 function broadcastStatus(input: {
   roomId: string;
   workItemId: string;
@@ -250,6 +305,7 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "bootstrap_agent_voice_authority" ||
       parsed.type === "grant_agent_voice" ||
       parsed.type === "revoke_agent_voice" ||
+      parsed.type === "request_agent_voice_utterance" ||
       parsed.type === "rtc_config_request" ||
       parsed.type === "rtc_call_open" ||
       parsed.type === "group_media_join" ||
@@ -469,7 +525,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-m fields."
+          message: "join_room is missing required P0-n fields."
         });
         return;
       }
@@ -630,6 +686,10 @@ wss.on("connection", (socket) => {
       }
 
       reconcileGroupMedia(session.roomId);
+      await reconcileAgentVoice(
+        session.roomId,
+        `voice-source-join-${message.requestId}`
+      );
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -644,6 +704,10 @@ wss.on("connection", (socket) => {
         session.participantId
       );
       reconcileGroupMedia(session.roomId);
+      await reconcileAgentVoice(
+        session.roomId,
+        `voice-source-leave-${message.requestId}`
+      );
       broadcastGroupMediaState(session.roomId, message.requestId);
       return;
     }
@@ -1376,6 +1440,43 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "request_agent_voice_utterance") {
+      const actorParticipantId = session.participantId;
+
+      try {
+        await agentVoiceRuntime.requestUtterance({
+          roomId: session.roomId,
+          actorParticipantId,
+          agentParticipantId: message.agentParticipantId,
+          voiceGrantId: message.voiceGrantId,
+          authorityGrantId: message.authorityGrantId,
+          utteranceKind: message.utteranceKind,
+          onState: (state, metadata) => {
+            broadcastVoiceStatus({
+              requestId: message.requestId,
+              roomId: session.roomId,
+              utteranceId: metadata.utteranceId,
+              agentParticipantId: message.agentParticipantId,
+              voiceId: metadata.voiceId,
+              sourceId: metadata.sourceId,
+              state,
+              errorCode: metadata.errorCode
+            });
+          }
+        });
+      } catch (error) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: voiceFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Agent voice renderer failed."
+        });
+      }
+      return;
+    }
+
     if (message.type === "grant_agent_voice") {
       if (
         !message.agentParticipantId ||
@@ -1491,6 +1592,11 @@ wss.on("connection", (socket) => {
         receipt: result.agentVoiceGrant,
         replayed: Boolean(result.replayed)
       });
+
+      await reconcileAgentVoice(
+        message.roomId,
+        `voice-grant-${message.requestId}`
+      );
       return;
     }
 
@@ -1506,6 +1612,11 @@ wss.on("connection", (socket) => {
         };
         broadcast(message.roomId, roomEvent);
       }
+
+      await reconcileAgentVoice(
+        message.roomId,
+        `voice-revoke-${message.requestId}`
+      );
 
       send(socket, {
         type: "agent_voice_revocation_receipt",
@@ -1668,6 +1779,10 @@ wss.on("connection", (socket) => {
         session.participantId
       );
       reconcileGroupMedia(session.roomId);
+      void reconcileAgentVoice(
+        session.roomId,
+        `voice-peer-left-${crypto.randomUUID()}`
+      );
       broadcastGroupMediaState(
         session.roomId,
         `group-peer-left-${crypto.randomUUID()}`
