@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-s adds a server-enforced membership history floor: first-time participants receive current room state but no durable event replay from before their membership began, while known participants can resume missed post-membership events.
+This repository is at the **P0 prototype** stage. P0-t adds a two-human end-to-end acceptance proof: live governed media and a participant-owned cue continue while bounded silent agent work completes, submission remains distinct from explicit acceptance authority, and the accepted outcome survives episode exit into selective resumption.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-s: CommonLine keeps current room state separate from retrospective event history. First-time membership does not inherit earlier room events, and reconnect acknowledgement cannot rewind below the identity's durable membership floor. The wire remains `p0-q.1`.
+The current executable rung is P0-t: CI exercises the original P0 experience as one technical chain, from two-human live media through concurrent bounded work, explicit durable acceptance, episode exit, and stable-identity resumption. This is technical acceptance evidence, not a substitute for the planned human comparison against voice + notes. The wire remains `p0-q.1`.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md).
 
 ## Working name
 
