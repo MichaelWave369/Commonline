@@ -4,9 +4,8 @@ permissions:
   contents: write
 
 on:
-  push:
-    branches:
-      - "feat/p0j-mediasoup-sfu"
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   lockfile:
@@ -21,6 +20,10 @@ jobs:
           cache: npm
       - name: Generate lockfile
         run: npm install --package-lock-only --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p0j-package-lock
+          path: package-lock.json
       - name: Commit lockfile if changed
         run: |
           if git diff --quiet -- package-lock.json; then
