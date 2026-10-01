@@ -40,7 +40,7 @@ function acceptedRoom(): RoomSnapshot {
     status: "proposed",
     createdAt: new Date().toISOString()
   });
-  room = proposed.room;
+  room = proposed;
 
   const acceptGrant = room.grants.find(
     (grant) =>
