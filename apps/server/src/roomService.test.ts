@@ -329,4 +329,141 @@ describe("P0-d RoomService wire freeze", () => {
     expect(currentVersion(service, "rtc")).toBe(beforeVersion);
     expect(service.getEventLog("rtc")).toHaveLength(beforeEvents);
   });
+
+  it("transfers ACCEPT_OUTCOME with immutable revocation + grant receipts and idempotent replay", () => {
+    const service = new RoomService("test room");
+
+    service.join({
+      roomId: "handoff",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    service.join({
+      roomId: "handoff",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    const room = service.getRoom("handoff")!;
+    const aliceGrant = room.grants.find(
+      (grant) =>
+        grant.subjectParticipantId === "alice" &&
+        grant.capability === "ACCEPT_OUTCOME"
+    )!;
+    const baseVersion = room.version;
+
+    const transferred = service.applyIntent("alice", {
+      type: "transfer_accept_authority",
+      requestId: "transfer-1",
+      roomId: "handoff",
+      baseVersion,
+      transferId: "transfer-stable-001",
+      targetParticipantId: "bob",
+      authorityGrantId: aliceGrant.grantId
+    });
+
+    expect(transferred.ok).toBe(true);
+    if (!transferred.ok || !transferred.authorityTransfer) return;
+
+    const receipt = transferred.authorityTransfer;
+    expect(receipt.fromParticipantId).toBe("alice");
+    expect(receipt.toParticipantId).toBe("bob");
+    expect(receipt.revokedGrantId).toBe(aliceGrant.grantId);
+    expect(transferred.room.grantRevocations).toContainEqual(
+      expect.objectContaining({
+        revocationId: receipt.revocationReceiptId,
+        grantId: aliceGrant.grantId,
+        revokedByParticipantId: "alice"
+      })
+    );
+
+    const issued = transferred.room.grants.find(
+      (grant) => grant.grantId === receipt.issuedGrantId
+    );
+    expect(issued).toMatchObject({
+      subjectParticipantId: "bob",
+      capability: "ACCEPT_OUTCOME",
+      issuerId: "alice"
+    });
+
+    expect(
+      transferred.room.participants.find((participant) => participant.id === "alice")
+        ?.role
+    ).toBe("participant");
+    expect(
+      transferred.room.participants.find((participant) => participant.id === "bob")
+        ?.role
+    ).toBe("steward");
+
+    const committedVersion = transferred.room.version;
+
+    const replay = service.applyIntent("alice", {
+      type: "transfer_accept_authority",
+      requestId: "transfer-replay",
+      roomId: "handoff",
+      baseVersion,
+      transferId: "transfer-stable-001",
+      targetParticipantId: "bob",
+      authorityGrantId: aliceGrant.grantId
+    });
+
+    expect(replay.ok).toBe(true);
+    if (!replay.ok || !replay.authorityTransfer) return;
+    expect(replay.replayed).toBe(true);
+    expect(replay.authorityTransfer.transferReceiptId).toBe(
+      receipt.transferReceiptId
+    );
+    expect(replay.room.version).toBe(committedVersion);
+
+    const aliceWork = service.applyIntent("alice", {
+      type: "submit_work",
+      requestId: "work-after-transfer",
+      roomId: "handoff",
+      baseVersion: committedVersion,
+      prompt: "prepare acceptance proof"
+    });
+    expect(aliceWork.ok).toBe(true);
+    if (!aliceWork.ok || !aliceWork.work) return;
+
+    const proposed = service.proposeArtifact("handoff", {
+      id: "artifact-after-transfer",
+      sourceWorkId: aliceWork.work.id,
+      title: "Handoff proof",
+      body: "Bob should now be the only accept authority holder.",
+      producedBy: "agent-vessie",
+      status: "proposed",
+      createdAt: new Date().toISOString()
+    });
+    expect(proposed.ok).toBe(true);
+    if (!proposed.ok) return;
+
+    const aliceAccept = service.applyIntent("alice", {
+      type: "accept_outcome",
+      requestId: "alice-old-grant",
+      roomId: "handoff",
+      baseVersion: proposed.room.version,
+      acceptId: "alice-accept",
+      workItemId: aliceWork.work.id,
+      artifactId: "artifact-after-transfer",
+      authorityGrantId: aliceGrant.grantId
+    });
+    expect(aliceAccept.ok).toBe(false);
+    if (!aliceAccept.ok) expect(aliceAccept.code).toBe("GRANT_NOT_FOUND");
+
+    const bobAccept = service.applyIntent("bob", {
+      type: "accept_outcome",
+      requestId: "bob-new-grant",
+      roomId: "handoff",
+      baseVersion: proposed.room.version,
+      acceptId: "bob-accept",
+      workItemId: aliceWork.work.id,
+      artifactId: "artifact-after-transfer",
+      authorityGrantId: receipt.issuedGrantId
+    });
+    expect(bobAccept.ok).toBe(true);
+  });
 });

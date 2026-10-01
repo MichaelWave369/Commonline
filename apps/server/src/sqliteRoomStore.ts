@@ -5,8 +5,11 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
   type Artifact,
+  type AuthorityTransferReceipt,
   type Capability,
   type GrantReceipt,
+  type GrantRevocationReceipt,
+  type IdentityPublicKey,
   type Participant,
   type ParticipantRole,
   type PrincipalKind,
@@ -16,12 +19,18 @@ import {
   type WorkItem,
   type WorkStatus
 } from "@commonline/protocol";
+import type {
+  DurableIdentityStore,
+  IdentityRecord
+} from "./identityStore";
 import {
   type DurableRoomStore,
   PersistenceConflictError
 } from "./roomStore";
 
-export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-e.1" as const;
+export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-f.1" as const;
+const PREVIOUS_STORAGE_SCHEMA_VERSION = "p0-e.1";
+const PREVIOUS_WIRE_SCHEMA_VERSION = "p0-d.1";
 
 type SqlValue = string | number | null;
 
@@ -43,7 +52,37 @@ function optionalString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
-export class SQLiteRoomStore implements DurableRoomStore {
+function parsePublicKey(value: unknown): IdentityPublicKey {
+  const parsed =
+    typeof value === "string"
+      ? (JSON.parse(value) as Record<string, unknown>)
+      : null;
+
+  if (
+    !parsed ||
+    parsed.kty !== "EC" ||
+    parsed.crv !== "P-256" ||
+    typeof parsed.x !== "string" ||
+    typeof parsed.y !== "string"
+  ) {
+    throw new Error("Invalid persisted identity public key.");
+  }
+
+  return {
+    kty: "EC",
+    crv: "P-256",
+    x: parsed.x,
+    y: parsed.y,
+    ext: typeof parsed.ext === "boolean" ? parsed.ext : undefined,
+    key_ops: Array.isArray(parsed.key_ops)
+      ? parsed.key_ops.filter((item): item is string => typeof item === "string")
+      : undefined
+  };
+}
+
+export class SQLiteRoomStore
+  implements DurableRoomStore, DurableIdentityStore
+{
   private readonly db: DatabaseSync;
 
   constructor(public readonly filename: string) {
@@ -103,6 +142,18 @@ export class SQLiteRoomStore implements DurableRoomStore {
         FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS grant_revocations (
+        revocation_id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        grant_id TEXT NOT NULL,
+        revoked_by_participant_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        revoked_at TEXT NOT NULL,
+        UNIQUE (room_id, grant_id),
+        FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+        FOREIGN KEY (grant_id) REFERENCES grant_receipts(grant_id)
+      );
+
       CREATE TABLE IF NOT EXISTS work_items (
         work_item_id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL,
@@ -144,6 +195,25 @@ export class SQLiteRoomStore implements DurableRoomStore {
         FOREIGN KEY (authority_grant_id) REFERENCES grant_receipts(grant_id)
       );
 
+      CREATE TABLE IF NOT EXISTS authority_transfers (
+        transfer_receipt_id TEXT PRIMARY KEY,
+        transfer_id TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        from_participant_id TEXT NOT NULL,
+        to_participant_id TEXT NOT NULL,
+        revoked_grant_id TEXT NOT NULL,
+        revocation_receipt_id TEXT NOT NULL,
+        issued_grant_id TEXT NOT NULL,
+        committed_version INTEGER NOT NULL,
+        transferred_at TEXT NOT NULL,
+        UNIQUE (room_id, transfer_id),
+        UNIQUE (room_id, revoked_grant_id),
+        FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+        FOREIGN KEY (revoked_grant_id) REFERENCES grant_receipts(grant_id),
+        FOREIGN KEY (revocation_receipt_id) REFERENCES grant_revocations(revocation_id),
+        FOREIGN KEY (issued_grant_id) REFERENCES grant_receipts(grant_id)
+      );
+
       CREATE TABLE IF NOT EXISTS room_events (
         event_id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL,
@@ -156,6 +226,14 @@ export class SQLiteRoomStore implements DurableRoomStore {
         FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS identity_claims (
+        participant_id TEXT PRIMARY KEY,
+        public_key_jwk TEXT NOT NULL,
+        recovery_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        rotated_at TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_room_events_room_version
         ON room_events(room_id, version);
       CREATE INDEX IF NOT EXISTS idx_work_items_room
@@ -164,6 +242,10 @@ export class SQLiteRoomStore implements DurableRoomStore {
         ON artifacts(room_id);
       CREATE INDEX IF NOT EXISTS idx_grants_room_subject
         ON grant_receipts(room_id, subject_participant_id);
+      CREATE INDEX IF NOT EXISTS idx_revocations_room
+        ON grant_revocations(room_id);
+      CREATE INDEX IF NOT EXISTS idx_transfers_room
+        ON authority_transfers(room_id);
     `);
 
     const getMeta = this.db.prepare(
@@ -189,6 +271,35 @@ export class SQLiteRoomStore implements DurableRoomStore {
     const storageVersion = storageRow?.value;
     const wireVersion = wireRow?.value;
 
+    if (
+      storageVersion === PREVIOUS_STORAGE_SCHEMA_VERSION &&
+      wireVersion === PREVIOUS_WIRE_SCHEMA_VERSION
+    ) {
+      this.db.exec("BEGIN IMMEDIATE;");
+      try {
+        this.db
+          .prepare("UPDATE schema_meta SET value = ? WHERE key = 'storage_version'")
+          .run(COMMONLINE_STORAGE_SCHEMA_VERSION);
+        this.db
+          .prepare("UPDATE schema_meta SET value = ? WHERE key = 'wire_schema_version'")
+          .run(COMMONLINE_WIRE_SCHEMA_VERSION);
+        this.db
+          .prepare(
+            `INSERT INTO schema_meta(key, value) VALUES ('migrated_at', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+          )
+          .run(new Date().toISOString());
+        this.db
+          .prepare("UPDATE rooms SET wire_schema_version = ?")
+          .run(COMMONLINE_WIRE_SCHEMA_VERSION);
+        this.db.exec("COMMIT;");
+      } catch (error) {
+        this.db.exec("ROLLBACK;");
+        throw error;
+      }
+      return;
+    }
+
     if (storageVersion !== COMMONLINE_STORAGE_SCHEMA_VERSION) {
       throw new Error(
         `Unsupported Commonline storage schema ${String(storageVersion)}; expected ${COMMONLINE_STORAGE_SCHEMA_VERSION}.`
@@ -199,6 +310,60 @@ export class SQLiteRoomStore implements DurableRoomStore {
       throw new Error(
         `Stored wire schema ${String(wireVersion)} does not match runtime ${COMMONLINE_WIRE_SCHEMA_VERSION}.`
       );
+    }
+  }
+
+  getIdentity(participantId: string): IdentityRecord | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT participant_id, public_key_jwk, recovery_hash, created_at, rotated_at FROM identity_claims WHERE participant_id = ?"
+      )
+      .get(participantId) as Record<string, unknown> | undefined;
+
+    if (!row) return undefined;
+
+    return {
+      participantId: asString(row.participant_id, "identity participant id"),
+      publicKey: parsePublicKey(row.public_key_jwk),
+      recoveryHash: asString(row.recovery_hash, "identity recovery hash"),
+      createdAt: asString(row.created_at, "identity created_at"),
+      rotatedAt: optionalString(row.rotated_at)
+    };
+  }
+
+  enrollIdentity(record: IdentityRecord) {
+    this.db
+      .prepare(
+        "INSERT INTO identity_claims(participant_id, public_key_jwk, recovery_hash, created_at, rotated_at) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(
+        record.participantId,
+        JSON.stringify(record.publicKey),
+        record.recoveryHash,
+        record.createdAt,
+        record.rotatedAt ?? null
+      );
+  }
+
+  rotateIdentity(input: {
+    participantId: string;
+    publicKey: IdentityPublicKey;
+    recoveryHash: string;
+    rotatedAt: string;
+  }) {
+    const result = this.db
+      .prepare(
+        "UPDATE identity_claims SET public_key_jwk = ?, recovery_hash = ?, rotated_at = ? WHERE participant_id = ?"
+      )
+      .run(
+        JSON.stringify(input.publicKey),
+        input.recoveryHash,
+        input.rotatedAt,
+        input.participantId
+      );
+
+    if (result.changes !== 1) {
+      throw new Error("Identity rotation target does not exist.");
     }
   }
 
@@ -229,6 +394,18 @@ export class SQLiteRoomStore implements DurableRoomStore {
       )
       .all(roomId) as Record<string, unknown>[];
 
+    const revocationRows = this.db
+      .prepare(
+        "SELECT revocation_id, grant_id, revoked_by_participant_id, reason, revoked_at FROM grant_revocations WHERE room_id = ? ORDER BY rowid"
+      )
+      .all(roomId) as Record<string, unknown>[];
+
+    const transferRows = this.db
+      .prepare(
+        "SELECT transfer_receipt_id, transfer_id, from_participant_id, to_participant_id, revoked_grant_id, revocation_receipt_id, issued_grant_id, committed_version, transferred_at FROM authority_transfers WHERE room_id = ? ORDER BY committed_version"
+      )
+      .all(roomId) as Record<string, unknown>[];
+
     const workRows = this.db
       .prepare(
         "SELECT work_item_id, requested_by, prompt, status, created_at FROM work_items WHERE room_id = ? ORDER BY rowid"
@@ -255,8 +432,6 @@ export class SQLiteRoomStore implements DurableRoomStore {
         name: asString(row.name, "participant name"),
         kind,
         role,
-        // Presence belongs to the runtime session plane. A restart never
-        // resurrects a human socket merely because a row exists on disk.
         presence:
           kind === "agent" && role === "silent-worker" ? "online" : "offline"
       };
@@ -275,6 +450,53 @@ export class SQLiteRoomStore implements DurableRoomStore {
       expiresAt: optionalString(row.expires_at),
       revokedAt: optionalString(row.revoked_at)
     }));
+
+    const grantRevocations: GrantRevocationReceipt[] = revocationRows.map(
+      (row) => ({
+        revocationId: asString(row.revocation_id, "revocation id"),
+        roomId,
+        grantId: asString(row.grant_id, "revoked grant id"),
+        revokedByParticipantId: asString(
+          row.revoked_by_participant_id,
+          "revocation actor"
+        ),
+        reason: asString(
+          row.reason,
+          "revocation reason"
+        ) as GrantRevocationReceipt["reason"],
+        revokedAt: asString(row.revoked_at, "revocation time")
+      })
+    );
+
+    const authorityTransfers: AuthorityTransferReceipt[] = transferRows.map(
+      (row) => ({
+        transferReceiptId: asString(
+          row.transfer_receipt_id,
+          "transfer receipt id"
+        ),
+        transferId: asString(row.transfer_id, "transfer id"),
+        roomId,
+        fromParticipantId: asString(
+          row.from_participant_id,
+          "transfer from participant"
+        ),
+        toParticipantId: asString(
+          row.to_participant_id,
+          "transfer to participant"
+        ),
+        revokedGrantId: asString(row.revoked_grant_id, "revoked grant id"),
+        revocationReceiptId: asString(
+          row.revocation_receipt_id,
+          "revocation receipt id"
+        ),
+        issuedGrantId: asString(row.issued_grant_id, "issued grant id"),
+        committedVersion: asNumber(
+          row.committed_version,
+          "transfer committed version"
+        ),
+        transferredAt: asString(row.transferred_at, "transfer time")
+      })
+    );
 
     const workItems: WorkItem[] = workRows.map((row) => ({
       id: asString(row.work_item_id, "work item id"),
@@ -323,6 +545,8 @@ export class SQLiteRoomStore implements DurableRoomStore {
       episodeActive: false,
       participants,
       grants,
+      grantRevocations,
+      authorityTransfers,
       workItems,
       artifacts,
       acceptances
@@ -393,9 +617,12 @@ export class SQLiteRoomStore implements DurableRoomStore {
           new Date().toISOString()
         );
 
-      // Snapshot tables are replaced only after the optimistic version check
-      // succeeds under BEGIN IMMEDIATE, so a competing writer cannot erase a
-      // canonical acceptance committed at a newer room version.
+      this.db
+        .prepare("DELETE FROM authority_transfers WHERE room_id = ?")
+        .run(input.room.roomId);
+      this.db
+        .prepare("DELETE FROM grant_revocations WHERE room_id = ?")
+        .run(input.room.roomId);
       this.db
         .prepare("DELETE FROM acceptance_receipts WHERE room_id = ?")
         .run(input.room.roomId);
@@ -438,6 +665,20 @@ export class SQLiteRoomStore implements DurableRoomStore {
           grant.issuedAt,
           grant.expiresAt ?? null,
           grant.revokedAt ?? null
+        );
+      }
+
+      const insertRevocation = this.db.prepare(
+        "INSERT INTO grant_revocations(revocation_id, room_id, grant_id, revoked_by_participant_id, reason, revoked_at) VALUES (?, ?, ?, ?, ?, ?)"
+      );
+      for (const revocation of input.room.grantRevocations) {
+        insertRevocation.run(
+          revocation.revocationId,
+          input.room.roomId,
+          revocation.grantId,
+          revocation.revokedByParticipantId,
+          revocation.reason,
+          revocation.revokedAt
         );
       }
 
@@ -488,6 +729,24 @@ export class SQLiteRoomStore implements DurableRoomStore {
         );
       }
 
+      const insertTransfer = this.db.prepare(
+        "INSERT INTO authority_transfers(transfer_receipt_id, transfer_id, room_id, from_participant_id, to_participant_id, revoked_grant_id, revocation_receipt_id, issued_grant_id, committed_version, transferred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      );
+      for (const transfer of input.room.authorityTransfers) {
+        insertTransfer.run(
+          transfer.transferReceiptId,
+          transfer.transferId,
+          input.room.roomId,
+          transfer.fromParticipantId,
+          transfer.toParticipantId,
+          transfer.revokedGrantId,
+          transfer.revocationReceiptId,
+          transfer.issuedGrantId,
+          transfer.committedVersion,
+          transfer.transferredAt
+        );
+      }
+
       this.db
         .prepare(
           "INSERT INTO room_events(event_id, room_id, version, type, actor_id, summary, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -516,20 +775,19 @@ export class SQLiteRoomStore implements DurableRoomStore {
     return Object.fromEntries(rows.map((row) => [row.key, row.value]));
   }
 
-  /**
-   * Test/support helper: returns only persisted table content. It intentionally
-   * has no access to scratch, status, sessions, signaling, or audio.
-   */
   durableDebugRows(): Record<string, Record<string, SqlValue>[]> {
     const tables = [
       "schema_meta",
       "rooms",
       "participants",
       "grant_receipts",
+      "grant_revocations",
       "work_items",
       "artifacts",
       "acceptance_receipts",
-      "room_events"
+      "authority_transfers",
+      "room_events",
+      "identity_claims"
     ];
 
     return Object.fromEntries(

@@ -129,3 +129,39 @@ acceptance    -> durable receipt
 ```
 
 Scratch must never be reconstructed from or copied into a durable receipt merely for audit convenience.
+
+
+## P0-f identity profile
+
+Wire schema: `p0-f.1`.
+
+Before `join_room`, a human connection must complete one of:
+
+```text
+identity_begin -> identity_challenge -> identity_prove
+identity_recover -> identity_authenticated
+```
+
+The server binds the authenticated participant id and session id to that WebSocket. A subsequent `join_room` must match both.
+
+Identity challenge/proof messages are transport authentication material, not room events.
+
+## P0-f grant revocation
+
+New revocations use separate immutable `GrantRevocationReceipt` objects.
+
+The legacy optional `GrantReceipt.revokedAt` field remains readable for P0-d migration compatibility, but P0-f authority transitions do not mutate grant receipts.
+
+## P0-f authority transfer
+
+`transfer_accept_authority` binds:
+
+- stable `transferId`
+- room id
+- base room version
+- target participant id
+- exact active `ACCEPT_OUTCOME` grant id
+
+The result is an `AuthorityTransferReceipt` referencing the revoked grant, revocation receipt, and newly issued grant.
+
+Transfer is idempotent across retry/restart.

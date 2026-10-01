@@ -2,8 +2,10 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
   type Artifact,
+  type AuthorityTransferReceipt,
   type Capability,
   type GrantReceipt,
+  type GrantRevocationReceipt,
   type Participant,
   type RequestedHumanRole,
   type RoomSnapshot,
@@ -33,6 +35,12 @@ function grant(input: {
     issuerId: input.issuerId ?? SYSTEM_ISSUER_ID,
     issuedAt: new Date().toISOString()
   };
+}
+
+function grantIsRevoked(room: RoomState, grantId: string) {
+  const grantReceipt = room.grants.find((receipt) => receipt.grantId === grantId);
+  if (grantReceipt?.revokedAt) return true;
+  return room.grantRevocations.some((receipt) => receipt.grantId === grantId);
 }
 
 export function createRoom(input: {
@@ -66,6 +74,8 @@ export function createRoom(input: {
         capability: "WRITE_DRAFT_ARTIFACT"
       })
     ],
+    grantRevocations: [],
+    authorityTransfers: [],
     workItems: [],
     artifacts: [],
     acceptances: []
@@ -82,7 +92,7 @@ export function activeGrant(
     if (
       receipt.subjectParticipantId !== participantId ||
       receipt.capability !== capability ||
-      receipt.revokedAt
+      grantIsRevoked(room, receipt.grantId)
     ) {
       return false;
     }
@@ -133,7 +143,9 @@ export function joinParticipant(
 
   const stewardExists = room.participants.some(
     (participant) =>
-      participant.kind === "human" && participant.role === "steward"
+      participant.kind === "human" &&
+      participant.role === "steward" &&
+      hasCapability(room, participant.id, "ACCEPT_OUTCOME")
   );
 
   const role =
@@ -348,7 +360,7 @@ export function acceptOutcome(
       receipt.grantId === input.authorityGrantId &&
       receipt.subjectParticipantId === input.actorParticipantId &&
       receipt.capability === "ACCEPT_OUTCOME" &&
-      !receipt.revokedAt &&
+      !grantIsRevoked(room, receipt.grantId) &&
       (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
   );
 
@@ -389,6 +401,145 @@ export function acceptOutcome(
       ),
       acceptances: [...room.acceptances, receipt],
       version: committedVersion
+    }
+  };
+}
+
+export type TransferAcceptAuthorityResult =
+  | {
+      ok: true;
+      room: RoomState;
+      receipt: AuthorityTransferReceipt;
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      code:
+        | "GRANT_NOT_FOUND"
+        | "TRANSFER_TARGET_INVALID"
+        | "TRANSFER_ALREADY_APPLIED";
+      message: string;
+      canonicalTransfer?: AuthorityTransferReceipt;
+    };
+
+export function transferAcceptAuthority(
+  room: RoomState,
+  input: {
+    transferId: string;
+    actorParticipantId: string;
+    targetParticipantId: string;
+    authorityGrantId: string;
+  }
+): TransferAcceptAuthorityResult {
+  const prior = room.authorityTransfers.find(
+    (receipt) => receipt.transferId === input.transferId
+  );
+  if (prior) {
+    return {
+      ok: true,
+      room,
+      receipt: prior,
+      replayed: true
+    };
+  }
+
+  const target = room.participants.find(
+    (participant) =>
+      participant.id === input.targetParticipantId &&
+      participant.kind === "human"
+  );
+
+  if (
+    !target ||
+    target.role === "observer" ||
+    target.id === input.actorParticipantId
+  ) {
+    return {
+      ok: false,
+      code: "TRANSFER_TARGET_INVALID",
+      message: "ACCEPT_OUTCOME can only transfer to a different non-observer human participant."
+    };
+  }
+
+  const authorityGrant = room.grants.find(
+    (receipt) =>
+      receipt.grantId === input.authorityGrantId &&
+      receipt.subjectParticipantId === input.actorParticipantId &&
+      receipt.capability === "ACCEPT_OUTCOME" &&
+      !grantIsRevoked(room, receipt.grantId) &&
+      (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+  );
+
+  if (!authorityGrant) {
+    return {
+      ok: false,
+      code: "GRANT_NOT_FOUND",
+      message: "The supplied ACCEPT_OUTCOME grant is not active for the transferring participant."
+    };
+  }
+
+  const canonicalForGrant = room.authorityTransfers.find(
+    (receipt) => receipt.revokedGrantId === authorityGrant.grantId
+  );
+  if (canonicalForGrant) {
+    return {
+      ok: false,
+      code: "TRANSFER_ALREADY_APPLIED",
+      message: "That authority grant has already been transferred.",
+      canonicalTransfer: canonicalForGrant
+    };
+  }
+
+  const transferredAt = new Date().toISOString();
+  const revocation: GrantRevocationReceipt = {
+    revocationId: id("grant-revocation"),
+    roomId: room.roomId,
+    grantId: authorityGrant.grantId,
+    revokedByParticipantId: input.actorParticipantId,
+    reason: "authority-transfer",
+    revokedAt: transferredAt
+  };
+
+  const issuedGrant = grant({
+    roomId: room.roomId,
+    subjectParticipantId: target.id,
+    capability: "ACCEPT_OUTCOME",
+    issuerId: input.actorParticipantId
+  });
+
+  const committedVersion = room.version + 1;
+  const receipt: AuthorityTransferReceipt = {
+    transferReceiptId: id("authority-transfer"),
+    transferId: input.transferId,
+    roomId: room.roomId,
+    fromParticipantId: input.actorParticipantId,
+    toParticipantId: target.id,
+    revokedGrantId: authorityGrant.grantId,
+    revocationReceiptId: revocation.revocationId,
+    issuedGrantId: issuedGrant.grantId,
+    committedVersion,
+    transferredAt
+  };
+
+  return {
+    ok: true,
+    replayed: false,
+    receipt,
+    room: {
+      ...room,
+      version: committedVersion,
+      participants: room.participants.map((participant) => {
+        if (participant.id === input.actorParticipantId) {
+          return { ...participant, role: "participant" as const };
+        }
+        if (participant.id === target.id) {
+          return { ...participant, role: "steward" as const };
+        }
+        return participant;
+      }),
+      grants: [...room.grants, issuedGrant],
+      grantRevocations: [...room.grantRevocations, revocation],
+      authorityTransfers: [...room.authorityTransfers, receipt]
     }
   };
 }

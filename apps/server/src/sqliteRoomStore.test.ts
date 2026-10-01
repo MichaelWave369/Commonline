@@ -284,4 +284,147 @@ describe("P0-e SQLite durability", () => {
       /Stored wire schema future-wire/
     );
   });
+
+  it("persists authority transfer receipts and revocations across restart", () => {
+    const path = databasePath();
+    const store1 = new SQLiteRoomStore(path);
+    const service1 = new RoomService("handoff persistence", store1);
+
+    service1.join({
+      roomId: "handoff-db",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    service1.join({
+      roomId: "handoff-db",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    const before = service1.getRoom("handoff-db")!;
+    const grant = before.grants.find(
+      (item) =>
+        item.subjectParticipantId === "alice" &&
+        item.capability === "ACCEPT_OUTCOME"
+    )!;
+
+    const transfer = service1.applyIntent("alice", {
+      type: "transfer_accept_authority",
+      requestId: "handoff",
+      roomId: "handoff-db",
+      baseVersion: before.version,
+      transferId: "transfer-persist-001",
+      targetParticipantId: "bob",
+      authorityGrantId: grant.grantId
+    });
+
+    expect(transfer.ok).toBe(true);
+    if (!transfer.ok || !transfer.authorityTransfer) return;
+    const receiptId = transfer.authorityTransfer.transferReceiptId;
+    const newGrantId = transfer.authorityTransfer.issuedGrantId;
+
+    store1.close();
+
+    const store2 = new SQLiteRoomStore(path);
+    const recovered = store2.loadRoom("handoff-db")!;
+
+    expect(recovered.authorityTransfers[0]?.transferReceiptId).toBe(receiptId);
+    expect(
+      recovered.grantRevocations.some(
+        (revocation) => revocation.grantId === grant.grantId
+      )
+    ).toBe(true);
+    expect(
+      recovered.grants.some(
+        (item) =>
+          item.grantId === newGrantId &&
+          item.subjectParticipantId === "bob" &&
+          item.capability === "ACCEPT_OUTCOME"
+      )
+    ).toBe(true);
+
+    store2.close();
+  });
+
+  it("stores identity public keys and only a recovery hash", () => {
+    const path = databasePath();
+    const store = new SQLiteRoomStore(path);
+
+    store.enrollIdentity({
+      participantId: "human-alice",
+      publicKey: {
+        kty: "EC",
+        crv: "P-256",
+        x: "x-coordinate",
+        y: "y-coordinate",
+        ext: true,
+        key_ops: ["verify"]
+      },
+      recoveryHash: "deadbeef",
+      createdAt: new Date().toISOString()
+    });
+
+    const identity = store.getIdentity("human-alice")!;
+    expect(identity.publicKey.x).toBe("x-coordinate");
+    expect(identity.recoveryHash).toBe("deadbeef");
+
+    const durable = JSON.stringify(store.durableDebugRows());
+    expect(durable).toContain("deadbeef");
+    expect(durable).not.toContain("raw-recovery-secret");
+
+    store.close();
+  });
+
+  it("explicitly migrates p0-e.1 / p0-d.1 metadata to the P0-f schema", () => {
+    const path = databasePath();
+    const raw = new DatabaseSync(path);
+
+    raw.exec(`
+      CREATE TABLE schema_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE rooms (
+        room_id TEXT PRIMARY KEY,
+        purpose TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        wire_schema_version TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("storage_version", "p0-e.1");
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("wire_schema_version", "p0-d.1");
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("created_at", new Date().toISOString());
+    raw
+      .prepare(
+        "INSERT INTO rooms(room_id, purpose, version, wire_schema_version, updated_at) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(
+        "legacy-room",
+        "legacy",
+        0,
+        "p0-d.1",
+        new Date().toISOString()
+      );
+    raw.close();
+
+    const migrated = new SQLiteRoomStore(path);
+    expect(migrated.metadata().storage_version).toBe(
+      COMMONLINE_STORAGE_SCHEMA_VERSION
+    );
+    expect(migrated.metadata().wire_schema_version).toBe("p0-f.1");
+    expect(migrated.metadata().migrated_at).toBeTruthy();
+    expect(migrated.loadRoom("legacy-room")?.schemaVersion).toBe("p0-f.1");
+    migrated.close();
+  });
 });

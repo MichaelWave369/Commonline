@@ -288,3 +288,46 @@ See [PERSISTENCE_P0E.md](PERSISTENCE_P0E.md).
 ## Next rung
 
 After P0-e is proven, the next architecture decision should be between identity/authority hardening and real-internet media hardening. Neither requires weakening the persistence boundary.
+
+
+## P0-f — cryptographic identity + ACCEPT_OUTCOME handoff
+
+P0-f separates proving a participant identity from granting that participant authority.
+
+```text
+P-256 identity proof
+       ↓
+authenticated session
+       ↓
+room join
+       ↓
+independent room-scoped grants
+```
+
+### Implemented in this rung
+
+- browser P-256 key pair stored in IndexedDB
+- non-exportable stored private signing key
+- server challenge-response before room join
+- one-time challenge expiry / replay prevention
+- first-use identity enrollment
+- recovery code shown only after enrollment / recovery
+- server stores recovery hash, never raw recovery secret
+- recovery rotates key + recovery code while preserving participant id
+- identity claim persisted in local SQLite
+- explicit P0-e -> P0-f storage migration
+- immutable grant-revocation receipts
+- atomic `ACCEPT_OUTCOME` handoff
+- idempotent authority-transfer ids and receipts
+- descriptive steward role follows the grant, but does not create authority
+- authority-transfer history survives restart
+
+See [IDENTITY_AUTHORITY_P0F.md](IDENTITY_AUTHORITY_P0F.md).
+
+### Important boundary
+
+Initial enrollment is trust-on-first-use for the local prototype. It preserves pre-P0-f participant continuity but is not sufficient for anonymous public internet enrollment.
+
+### Next rung
+
+P0-g should harden real internet calling: TURN relay, ICE/connectivity diagnostics, peer/network failure cleanup, and secure deployment defaults. Identity and room authority no longer need to be redesigned just to make that call traverse ugly NATs.

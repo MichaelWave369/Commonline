@@ -14,6 +14,7 @@ import {
 import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
+import { IdentityService } from "./identityService";
 import { RoomService } from "./roomService";
 import { SessionRegistry } from "./sessionRegistry";
 import {
@@ -24,6 +25,7 @@ import {
 const port = Number(process.env.PORT ?? 8787);
 const databasePath = process.env.COMMONLINE_DB_PATH ?? "./data/commonline.db";
 const store = new SQLiteRoomStore(databasePath);
+const identity = new IdentityService(store);
 const service = new RoomService(
   "Prove concurrent work + trustworthy resumption",
   store
@@ -40,7 +42,8 @@ const httpServer = createServer((request, response) => {
         service: "commonline-room",
         schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
         storage: "sqlite",
-        storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION
+        storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
+        identity: "p256-challenge-response"
       })
     );
     return;
@@ -119,9 +122,13 @@ function parseMessage(raw: RawData): ClientMessage | null {
     if (!parsed || typeof parsed !== "object") return null;
 
     if (
+      parsed.type === "identity_begin" ||
+      parsed.type === "identity_prove" ||
+      parsed.type === "identity_recover" ||
       parsed.type === "join_room" ||
       parsed.type === "submit_work" ||
-      parsed.type === "accept_outcome"
+      parsed.type === "accept_outcome" ||
+      parsed.type === "transfer_accept_authority"
     ) {
       return parsed as ClientMessage;
     }
@@ -141,7 +148,26 @@ function parseMessage(raw: RawData): ClientMessage | null {
   return null;
 }
 
+function schemaMatches(
+  socket: WebSocket,
+  requestId: string,
+  schemaVersion: unknown
+) {
+  if (schemaVersion === COMMONLINE_WIRE_SCHEMA_VERSION) return true;
+
+  reject(socket, {
+    requestId,
+    code: "SCHEMA_VERSION_MISMATCH",
+    message: `Client schema ${String(schemaVersion ?? "unknown")} is incompatible with ${COMMONLINE_WIRE_SCHEMA_VERSION}.`
+  });
+  socket.close(4400, "schema mismatch");
+  return false;
+}
+
 wss.on("connection", (socket) => {
+  let authenticated:
+    | { participantId: string; sessionId: string }
+    | null = null;
   let session:
     | { roomId: string; participantId: string; sessionId: string }
     | null = null;
@@ -157,14 +183,116 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (message.type === "join_room") {
-      if (message.schemaVersion !== COMMONLINE_WIRE_SCHEMA_VERSION) {
+    if (message.type === "identity_begin") {
+      if (!schemaMatches(socket, message.requestId, message.schemaVersion)) {
+        return;
+      }
+
+      const started = identity.begin({
+        requestId: message.requestId,
+        participantId: message.participantId,
+        sessionId: message.sessionId,
+        publicKey: message.publicKey
+      });
+
+      if (!started.ok) {
         reject(socket, {
           requestId: message.requestId,
-          code: "SCHEMA_VERSION_MISMATCH",
-          message: `Client schema ${message.schemaVersion ?? "unknown"} is incompatible with ${COMMONLINE_WIRE_SCHEMA_VERSION}.`
+          code: started.code,
+          message: started.message
         });
-        socket.close(4400, "schema mismatch");
+        return;
+      }
+
+      send(socket, started.message);
+      return;
+    }
+
+    if (message.type === "identity_prove") {
+      const proof = identity.prove({
+        challengeId: message.challengeId,
+        signature: message.signature
+      });
+
+      if (!proof.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: proof.code,
+          message: proof.message
+        });
+        return;
+      }
+
+      authenticated = {
+        participantId: proof.participantId,
+        sessionId: proof.sessionId
+      };
+
+      send(socket, {
+        type: "identity_authenticated",
+        requestId: message.requestId,
+        participantId: proof.participantId,
+        sessionId: proof.sessionId,
+        enrolled: proof.enrolled,
+        recovered: false,
+        recoveryCode: proof.recoveryCode
+      });
+      return;
+    }
+
+    if (message.type === "identity_recover") {
+      if (!schemaMatches(socket, message.requestId, message.schemaVersion)) {
+        return;
+      }
+
+      const recovered = identity.recover({
+        participantId: message.participantId,
+        sessionId: message.sessionId,
+        recoveryCode: message.recoveryCode,
+        newPublicKey: message.newPublicKey
+      });
+
+      if (!recovered.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: recovered.code,
+          message: recovered.message
+        });
+        return;
+      }
+
+      authenticated = {
+        participantId: recovered.participantId,
+        sessionId: recovered.sessionId
+      };
+
+      send(socket, {
+        type: "identity_authenticated",
+        requestId: message.requestId,
+        participantId: recovered.participantId,
+        sessionId: recovered.sessionId,
+        enrolled: false,
+        recovered: true,
+        recoveryCode: recovered.recoveryCode
+      });
+      return;
+    }
+
+    if (message.type === "join_room") {
+      if (!schemaMatches(socket, message.requestId, message.schemaVersion)) {
+        return;
+      }
+
+      if (
+        !authenticated ||
+        authenticated.participantId !== message.participantId ||
+        authenticated.sessionId !== message.sessionId
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "IDENTITY_REQUIRED",
+          message: "Complete identity proof for this participant/session before joining a room."
+        });
         return;
       }
 
@@ -180,7 +308,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-d fields."
+          message: "join_room is missing required P0-f fields."
         });
         return;
       }
@@ -204,8 +332,6 @@ wss.on("connection", (socket) => {
         connection: socket
       });
 
-      // New connection becomes authoritative before the old socket closes.
-      // The old close handler sees it has been superseded and does not emit leave.
       if (priorConnection && priorConnection.connection !== socket) {
         priorConnection.connection.close(4000, "session superseded");
       }
@@ -237,16 +363,16 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (!session) {
+    if (!session || !authenticated) {
       reject(socket, {
         requestId: message.requestId,
         code: "INVALID_SESSION",
-        message: "Join a room before sending room intents."
+        message: "Authenticate and join a room before sending room intents."
       });
       return;
     }
 
-    if (message.roomId !== session.roomId) {
+    if ("roomId" in message && message.roomId !== session.roomId) {
       reject(socket, {
         requestId: message.requestId,
         code: "INVALID_SESSION",
@@ -319,7 +445,31 @@ wss.on("connection", (socket) => {
         message: result.message,
         expectedVersion: result.room?.version,
         room: result.room,
-        canonicalAcceptance: result.canonicalAcceptance
+        canonicalAcceptance: result.canonicalAcceptance,
+        canonicalTransfer: result.canonicalTransfer
+      });
+      return;
+    }
+
+    if (
+      message.type === "transfer_accept_authority" &&
+      result.authorityTransfer
+    ) {
+      if (result.event) {
+        const roomEvent: RoomEventMessage = {
+          type: "room_event",
+          room: result.room,
+          event: result.event
+        };
+        broadcast(message.roomId, roomEvent);
+      }
+
+      send(socket, {
+        type: "authority_transfer_receipt",
+        requestId: message.requestId,
+        room: result.room,
+        receipt: result.authorityTransfer,
+        replayed: Boolean(result.replayed)
       });
       return;
     }
@@ -369,8 +519,6 @@ wss.on("connection", (socket) => {
       try {
         const artifact = await agent.perform(work);
 
-        // Application-level scratch is explicit temporary working material,
-        // not model chain-of-thought and never part of RoomSnapshot/RoomEvent.
         workPlane.writeScratch({
           roomId: message.roomId,
           workItemId: work.id,
