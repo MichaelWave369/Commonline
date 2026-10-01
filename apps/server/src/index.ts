@@ -7,6 +7,8 @@ import {
   type AgentWorkStatusMessage,
   type AttentionLeaseStateMessage,
   type ClientMessage,
+  type ListeningShareLeaseStateMessage,
+  type ListeningShareStatusMessage,
   type IntentRejectedMessage,
   type MediaSourceKind,
   type RoomEventMessage,
@@ -40,6 +42,9 @@ import {
   mediasoupConfigFromEnv
 } from "./mediasoupSfu";
 import { createLocalVoiceRenderer } from "./localVoiceRenderer";
+import { createLocalSpeechRecognizer } from "./localSpeechRecognizer";
+import { ListeningShareRegistry } from "./listeningShareRegistry";
+import { ListeningShareRuntime } from "./listeningShareRuntime";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
@@ -59,6 +64,7 @@ const service = new RoomService(
 const workPlane = new EphemeralWorkPlane();
 const agent = new MockSilentAgent("Vessie");
 const voiceRenderer = createLocalVoiceRenderer();
+const speechRecognizer = createLocalSpeechRecognizer();
 const sfu = await MediasoupSfuAdapter.create(
   mediasoupConfigFromEnv()
 );
@@ -79,6 +85,8 @@ const httpServer = createServer((request, response) => {
         agentVoiceAuthority: "p0-m.1",
         agentVoiceRenderer: voiceRenderer.status(),
         attentionLeases: "ephemeral-one-turn-p0-o",
+        governedListening: "bounded-push-share-p0-p",
+        speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })
     );
@@ -94,12 +102,20 @@ const sessions = new SessionRegistry<WebSocket>();
 const mediaSessions = new MediaSessionRegistry();
 const groupMedia = new GroupMediaRegistry();
 const attentionLeases = new AttentionLeaseRegistry();
+const listeningShares = new ListeningShareRegistry();
 const agentVoiceRuntime = new AgentVoiceRuntime(
   service,
   attentionLeases,
   groupMedia,
   sfu,
   voiceRenderer,
+  agent
+);
+const listeningShareRuntime = new ListeningShareRuntime(
+  service,
+  groupMedia,
+  listeningShares,
+  speechRecognizer,
   agent
 );
 
@@ -196,6 +212,61 @@ function groupMediaPermission(
       participant &&
       hasCapability(room, participantId, capability)
   );
+}
+
+function listeningFailureCode(error: unknown) {
+  const code =
+    error instanceof Error ? error.message : String(error);
+
+  if (
+    code === "ROOM_NOT_FOUND" ||
+    code === "NOT_AUTHORIZED" ||
+    code === "VOICE_GROUP_MEDIA_REQUIRED" ||
+    code === "LISTENING_LEASE_NOT_FOUND" ||
+    code === "LISTENING_LEASE_NOT_OWNED" ||
+    code === "LISTENING_LEASE_EXPIRED" ||
+    code === "LISTENING_LEASE_CONSUMED" ||
+    code === "LISTENING_LEASE_REVOKED" ||
+    code === "LISTENING_AUDIO_INVALID" ||
+    code === "LISTENING_SHARE_BUSY" ||
+    code === "STT_UNAVAILABLE" ||
+    code === "STT_FAILED"
+  ) {
+    return code;
+  }
+
+  return "STT_FAILED" as const;
+}
+
+function sendListeningLeaseState(
+  socket: WebSocket,
+  requestId: string,
+  roomId: string,
+  lease: ListeningShareLeaseStateMessage["lease"]
+) {
+  send(socket, {
+    type: "listening_share_lease_state",
+    requestId,
+    roomId,
+    lease
+  });
+}
+
+function broadcastListeningStatus(input: {
+  requestId: string;
+  roomId: string;
+  shareId: string;
+  leaseId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  state: ListeningShareStatusMessage["state"];
+  errorCode?: string;
+}) {
+  const message: ListeningShareStatusMessage = {
+    type: "listening_share_status",
+    ...input
+  };
+  broadcast(input.roomId, message);
 }
 
 function voiceFailureCode(error: unknown) {
@@ -385,6 +456,41 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "sfu_produce" ||
       parsed.type === "sfu_consume" ||
       parsed.type === "sfu_consumer_resume"
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "grant_listening_share" &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "revoke_listening_share" &&
+      typeof parsed.leaseId === "string" &&
+      parsed.leaseId.length > 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "submit_listening_share" &&
+      typeof parsed.shareId === "string" &&
+      parsed.shareId.length > 0 &&
+      typeof parsed.leaseId === "string" &&
+      parsed.leaseId.length > 0 &&
+      typeof parsed.agentParticipantId === "string" &&
+      parsed.agentParticipantId.length > 0 &&
+      parsed.sampleRate === 16000 &&
+      Number.isInteger(parsed.sampleCount) &&
+      Number(parsed.sampleCount) >= 1600 &&
+      Number(parsed.sampleCount) <= 80000 &&
+      typeof parsed.pcm16Base64 === "string" &&
+      parsed.pcm16Base64.length > 0 &&
+      parsed.pcm16Base64.length <= 220000
     ) {
       return parsed as ClientMessage;
     }
@@ -622,7 +728,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-o fields."
+          message: "join_room is missing required P0-p fields."
         });
         return;
       }
@@ -797,6 +903,10 @@ wss.on("connection", (socket) => {
         participantId: session.participantId
       });
       attentionLeases.removeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      listeningShares.removeParticipant(
         session.roomId,
         session.participantId
       );
@@ -1541,6 +1651,168 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (message.type === "grant_listening_share") {
+      const actorParticipantId = session.participantId;
+      const room = service.getRoom(session.roomId);
+      const target = room?.participants.find(
+        (participant) =>
+          participant.id === message.agentParticipantId &&
+          participant.kind === "agent"
+      );
+      const currentGroup = groupMedia.currentForParticipant(
+        session.roomId,
+        actorParticipantId
+      );
+
+      if (!target || !currentGroup) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "VOICE_GROUP_MEDIA_REQUIRED",
+          message:
+            "A bounded listening share can be granted only while the human is in live group media with the target agent available."
+        });
+        return;
+      }
+
+      if (
+        !room ||
+        !hasCapability(
+          room,
+          message.agentParticipantId,
+          "READ_SELECTED_CONTEXT"
+        )
+      ) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "NOT_AUTHORIZED",
+          message:
+            "The target agent is not authorized to receive explicitly selected context."
+        });
+        return;
+      }
+
+      if (!speechRecognizer.status().ready) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "STT_UNAVAILABLE",
+          message:
+            "No local speech recognizer is ready for a bounded listening share."
+        });
+        return;
+      }
+
+      const lease = listeningShares.grant({
+        roomId: session.roomId,
+        humanParticipantId: actorParticipantId,
+        agentParticipantId: message.agentParticipantId
+      });
+      sendListeningLeaseState(
+        socket,
+        message.requestId,
+        session.roomId,
+        lease
+      );
+      return;
+    }
+
+    if (message.type === "revoke_listening_share") {
+      const revoked = listeningShares.revoke({
+        roomId: session.roomId,
+        leaseId: message.leaseId,
+        humanParticipantId: session.participantId
+      });
+
+      if (!revoked.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: revoked.code,
+          message: revoked.message
+        });
+        return;
+      }
+
+      sendListeningLeaseState(
+        socket,
+        message.requestId,
+        session.roomId,
+        revoked.lease
+      );
+      return;
+    }
+
+    if (message.type === "submit_listening_share") {
+      const actorParticipantId = session.participantId;
+      const actorRoomId = session.roomId;
+
+      try {
+        const result = await listeningShareRuntime.submit({
+          roomId: actorRoomId,
+          humanParticipantId: actorParticipantId,
+          agentParticipantId: message.agentParticipantId,
+          leaseId: message.leaseId,
+          shareId: message.shareId,
+          sampleRate: message.sampleRate,
+          sampleCount: message.sampleCount,
+          pcm16Base64: message.pcm16Base64,
+          onState: (state, errorCode) => {
+            broadcastListeningStatus({
+              requestId: message.requestId,
+              roomId: actorRoomId,
+              shareId: message.shareId,
+              leaseId: message.leaseId,
+              humanParticipantId: actorParticipantId,
+              agentParticipantId: message.agentParticipantId,
+              state,
+              errorCode
+            });
+          }
+        });
+
+        const consumed = listeningShares.get(message.leaseId);
+        if (consumed) {
+          sendListeningLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            consumed
+          );
+        }
+
+        send(socket, {
+          type: "listening_share_result",
+          requestId: message.requestId,
+          roomId: actorRoomId,
+          shareId: message.shareId,
+          leaseId: message.leaseId,
+          agentParticipantId: message.agentParticipantId,
+          transcript: result.transcript,
+          engine: result.engine,
+          sampleCount: result.sampleCount,
+          durationMs: result.durationMs
+        });
+      } catch (error) {
+        const lease = listeningShares.get(message.leaseId);
+        if (lease) {
+          sendListeningLeaseState(
+            socket,
+            message.requestId,
+            actorRoomId,
+            lease
+          );
+        }
+
+        reject(socket, {
+          requestId: message.requestId,
+          code: listeningFailureCode(error),
+          message:
+            error instanceof Error
+              ? error.message
+              : "Bounded listening share failed."
+        });
+      }
+      return;
+    }
+
     if (message.type === "grant_attention_lease") {
       const actorParticipantId = session.participantId;
       const room = service.getRoom(session.roomId);
@@ -1976,6 +2248,10 @@ wss.on("connection", (socket) => {
     if (!wasCurrent) return;
 
     attentionLeases.removeParticipant(
+      session.roomId,
+      session.participantId
+    );
+    listeningShares.removeParticipant(
       session.roomId,
       session.participantId
     );
