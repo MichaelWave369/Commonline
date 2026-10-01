@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-k.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-m.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -64,6 +64,7 @@ export type Capability =
   | "ACCEPT_OUTCOME"
   | "RECEIVE_MEDIA"
   | "SPEAK"
+  | "MANAGE_AGENT_VOICE"
   | "EXECUTE_EXTERNAL_EFFECT";
 
 export interface GrantReceipt {
@@ -103,6 +104,43 @@ export interface AuthorityTransferReceipt {
   transferredAt: string;
 }
 
+export interface VoiceAuthorityBootstrapReceipt {
+  bootstrapReceiptId: string;
+  bootstrapId: string;
+  roomId: string;
+  actorParticipantId: string;
+  acceptAuthorityGrantId: string;
+  issuedGrantId: string;
+  committedVersion: number;
+  bootstrappedAt: string;
+}
+
+export interface AgentVoiceGrantReceipt {
+  voiceGrantId: string;
+  grantRequestId: string;
+  roomId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  audienceMode: "explicit-subscription";
+  issuedByParticipantId: string;
+  authorityGrantId: string;
+  issuedAt: string;
+  expiresAt?: string;
+  committedVersion: number;
+}
+
+export interface AgentVoiceRevocationReceipt {
+  voiceRevocationId: string;
+  revokeRequestId: string;
+  roomId: string;
+  voiceGrantId: string;
+  revokedByParticipantId: string;
+  authorityGrantId: string;
+  reason: "manual";
+  revokedAt: string;
+  committedVersion: number;
+}
+
 export interface AcceptanceReceipt {
   receiptId: string;
   acceptId: string;
@@ -125,6 +163,9 @@ export interface RoomSnapshot {
   grants: GrantReceipt[];
   grantRevocations: GrantRevocationReceipt[];
   authorityTransfers: AuthorityTransferReceipt[];
+  voiceAuthorityBootstraps: VoiceAuthorityBootstrapReceipt[];
+  agentVoiceGrants: AgentVoiceGrantReceipt[];
+  agentVoiceRevocations: AgentVoiceRevocationReceipt[];
   workItems: WorkItem[];
   artifacts: Artifact[];
   acceptances: AcceptanceReceipt[];
@@ -136,7 +177,10 @@ export type RoomEventType =
   | "work_submitted"
   | "artifact_proposed"
   | "artifact_accepted"
-  | "accept_authority_transferred";
+  | "accept_authority_transferred"
+  | "voice_authority_bootstrapped"
+  | "agent_voice_granted"
+  | "agent_voice_revoked";
 
 export interface RoomEvent {
   id: string;
@@ -235,6 +279,37 @@ export interface TransferAcceptAuthorityMessage {
   authorityGrantId: string;
 }
 
+export interface BootstrapAgentVoiceAuthorityMessage {
+  type: "bootstrap_agent_voice_authority";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  bootstrapId: string;
+  acceptAuthorityGrantId: string;
+}
+
+export interface GrantAgentVoiceMessage {
+  type: "grant_agent_voice";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  grantRequestId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  authorityGrantId: string;
+  expiresAt?: string;
+}
+
+export interface RevokeAgentVoiceMessage {
+  type: "revoke_agent_voice";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  revokeRequestId: string;
+  voiceGrantId: string;
+  authorityGrantId: string;
+}
+
 export interface RtcIceServerConfig {
   urls: string[];
   username?: string;
@@ -297,10 +372,15 @@ export type MediaSourceKind =
 
 export type MediaSourceExecutionState = "executable" | "reserved";
 
+export type MediaSourceAuthorityRequirement =
+  | "SPEAK"
+  | "AGENT_VOICE_GRANT"
+  | "SERVICE_POLICY";
+
 export interface MediaSourcePolicy {
   policyId: string;
   kind: MediaSourceKind;
-  requiredCapability: "SPEAK";
+  requiredAuthority: MediaSourceAuthorityRequirement;
   allowedPublisherKinds: PrincipalKind[];
   audienceMode: "explicit-subscription";
   retention: "ephemeral";
@@ -557,6 +637,9 @@ export type ClientMessage =
   | SubmitWorkMessage
   | AcceptOutcomeMessage
   | TransferAcceptAuthorityMessage
+  | BootstrapAgentVoiceAuthorityMessage
+  | GrantAgentVoiceMessage
+  | RevokeAgentVoiceMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
   | RtcSignalClientMessage
@@ -628,6 +711,30 @@ export interface AuthorityTransferReceiptMessage {
   replayed: boolean;
 }
 
+export interface VoiceAuthorityBootstrapReceiptMessage {
+  type: "voice_authority_bootstrap_receipt";
+  requestId: string;
+  room: RoomSnapshot;
+  receipt: VoiceAuthorityBootstrapReceipt;
+  replayed: boolean;
+}
+
+export interface AgentVoiceGrantReceiptMessage {
+  type: "agent_voice_grant_receipt";
+  requestId: string;
+  room: RoomSnapshot;
+  receipt: AgentVoiceGrantReceipt;
+  replayed: boolean;
+}
+
+export interface AgentVoiceRevocationReceiptMessage {
+  type: "agent_voice_revocation_receipt";
+  requestId: string;
+  room: RoomSnapshot;
+  receipt: AgentVoiceRevocationReceipt;
+  replayed: boolean;
+}
+
 export interface AgentWorkStatusMessage {
   type: "agent_work_status";
   roomId: string;
@@ -665,6 +772,13 @@ export type RejectionCode =
   | "IDENTITY_RECOVERY_INVALID"
   | "TRANSFER_TARGET_INVALID"
   | "TRANSFER_ALREADY_APPLIED"
+  | "VOICE_AUTHORITY_ALREADY_BOOTSTRAPPED"
+  | "VOICE_AUTHORITY_NOT_BOOTSTRAPPED"
+  | "VOICE_TARGET_INVALID"
+  | "VOICE_ID_INVALID"
+  | "VOICE_GRANT_NOT_FOUND"
+  | "VOICE_GRANT_ALREADY_ACTIVE"
+  | "VOICE_GRANT_ALREADY_REVOKED"
   | "MEDIA_BUSY"
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
@@ -689,6 +803,9 @@ export interface IntentRejectedMessage {
   room?: RoomSnapshot;
   canonicalAcceptance?: AcceptanceReceipt;
   canonicalTransfer?: AuthorityTransferReceipt;
+  canonicalVoiceBootstrap?: VoiceAuthorityBootstrapReceipt;
+  canonicalVoiceGrant?: AgentVoiceGrantReceipt;
+  canonicalVoiceRevocation?: AgentVoiceRevocationReceipt;
 }
 
 export type ServerMessage =
@@ -698,6 +815,9 @@ export type ServerMessage =
   | RoomEventMessage
   | AcceptanceReceiptMessage
   | AuthorityTransferReceiptMessage
+  | VoiceAuthorityBootstrapReceiptMessage
+  | AgentVoiceGrantReceiptMessage
+  | AgentVoiceRevocationReceiptMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage

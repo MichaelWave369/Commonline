@@ -3,8 +3,11 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
   type AcceptOutcomeMessage,
+  type AgentVoiceGrantReceipt,
+  type AgentVoiceRevocationReceipt,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
+  type BootstrapAgentVoiceAuthorityMessage,
   type GroupMediaJoinMessage,
   type GroupMediaLeaveMessage,
   type GroupMediaPublishSourceMessage,
@@ -19,8 +22,10 @@ import {
   type IdentityProveMessage,
   type IdentityRecoverMessage,
   type JoinRoomMessage,
+  type GrantAgentVoiceMessage,
   type MediaSourceKind,
   type RequestedHumanRole,
+  type RevokeAgentVoiceMessage,
   type RoomEvent,
   type RoomSnapshot,
   type RtcCallOpenMessage,
@@ -44,7 +49,8 @@ import {
   type SfuTransportCreateMessage,
   type SfuTransportCreatedMessage,
   type SubmitWorkMessage,
-  type TransferAcceptAuthorityMessage
+  type TransferAcceptAuthorityMessage,
+  type VoiceAuthorityBootstrapReceipt
 } from "@commonline/protocol";
 import {
   createIdentityCandidate,
@@ -63,6 +69,9 @@ const NAME_KEY = "commonline:p0d:name";
 const ROLE_KEY = "commonline:p0d:role";
 const ACCEPT_ID_PREFIX = "commonline:p0d:accept:";
 const TRANSFER_ID_PREFIX = "commonline:p0f:transfer:";
+const VOICE_BOOTSTRAP_ID_PREFIX = "commonline:p0m:voice-bootstrap:";
+const VOICE_GRANT_ID_PREFIX = "commonline:p0m:voice-grant:";
+const VOICE_REVOKE_ID_PREFIX = "commonline:p0m:voice-revoke:";
 
 type ConnectionState =
   | "disconnected"
@@ -152,6 +161,12 @@ export function useCommonlineRoom() {
     useState<AcceptanceReceipt | null>(null);
   const [lastAuthorityTransfer, setLastAuthorityTransfer] =
     useState<AuthorityTransferReceipt | null>(null);
+  const [lastVoiceAuthorityBootstrap, setLastVoiceAuthorityBootstrap] =
+    useState<VoiceAuthorityBootstrapReceipt | null>(null);
+  const [lastAgentVoiceGrant, setLastAgentVoiceGrant] =
+    useState<AgentVoiceGrantReceipt | null>(null);
+  const [lastAgentVoiceRevocation, setLastAgentVoiceRevocation] =
+    useState<AgentVoiceRevocationReceipt | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
@@ -464,6 +479,48 @@ export function useCommonlineRoom() {
         return;
       }
 
+      if (message.type === "voice_authority_bootstrap_receipt") {
+        rememberRoom(message.room);
+        setLastVoiceAuthorityBootstrap(message.receipt);
+        sessionStorage.removeItem(
+          `${VOICE_BOOTSTRAP_ID_PREFIX}${message.room.roomId}`
+        );
+        setNotice(
+          message.replayed
+            ? "Recovered the original voice-authority bootstrap receipt."
+            : "Dedicated MANAGE_AGENT_VOICE authority bootstrapped."
+        );
+        return;
+      }
+
+      if (message.type === "agent_voice_grant_receipt") {
+        rememberRoom(message.room);
+        setLastAgentVoiceGrant(message.receipt);
+        sessionStorage.removeItem(
+          `${VOICE_GRANT_ID_PREFIX}${message.receipt.agentParticipantId}`
+        );
+        setNotice(
+          message.replayed
+            ? "Recovered the original agent-voice grant receipt."
+            : "Agent voice granted with a durable receipt."
+        );
+        return;
+      }
+
+      if (message.type === "agent_voice_revocation_receipt") {
+        rememberRoom(message.room);
+        setLastAgentVoiceRevocation(message.receipt);
+        sessionStorage.removeItem(
+          `${VOICE_REVOKE_ID_PREFIX}${message.receipt.voiceGrantId}`
+        );
+        setNotice(
+          message.replayed
+            ? "Recovered the original agent-voice revocation receipt."
+            : "Agent voice revoked with a durable receipt."
+        );
+        return;
+      }
+
       if (message.type === "agent_work_status") {
         setAgentStatuses((current) => ({
           ...current,
@@ -535,6 +592,16 @@ export function useCommonlineRoom() {
         message.canonicalTransfer
       ) {
         setLastAuthorityTransfer(message.canonicalTransfer);
+      }
+
+      if (message.canonicalVoiceBootstrap) {
+        setLastVoiceAuthorityBootstrap(message.canonicalVoiceBootstrap);
+      }
+      if (message.canonicalVoiceGrant) {
+        setLastAgentVoiceGrant(message.canonicalVoiceGrant);
+      }
+      if (message.canonicalVoiceRevocation) {
+        setLastAgentVoiceRevocation(message.canonicalVoiceRevocation);
       }
 
       if (
@@ -779,6 +846,98 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const bootstrapAgentVoiceAuthority = useCallback(
+    (acceptAuthorityGrantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const storageKey = `${VOICE_BOOTSTRAP_ID_PREFIX}${room.roomId}`;
+      let bootstrapId = sessionStorage.getItem(storageKey);
+      if (!bootstrapId) {
+        bootstrapId = `voice-bootstrap-${crypto.randomUUID()}`;
+        sessionStorage.setItem(storageKey, bootstrapId);
+      }
+
+      const message: BootstrapAgentVoiceAuthorityMessage = {
+        type: "bootstrap_agent_voice_authority",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        bootstrapId,
+        acceptAuthorityGrantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const grantAgentVoice = useCallback(
+    (
+      agentParticipantId: string,
+      voiceId: string,
+      authorityGrantId: string,
+      expiresAt?: string
+    ) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const storageKey =
+        `${VOICE_GRANT_ID_PREFIX}${agentParticipantId}`;
+      let grantRequestId = sessionStorage.getItem(storageKey);
+      if (!grantRequestId) {
+        grantRequestId = `voice-grant-${crypto.randomUUID()}`;
+        sessionStorage.setItem(storageKey, grantRequestId);
+      }
+
+      const message: GrantAgentVoiceMessage = {
+        type: "grant_agent_voice",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        grantRequestId,
+        agentParticipantId,
+        voiceId,
+        authorityGrantId,
+        expiresAt
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
+  const revokeAgentVoice = useCallback(
+    (voiceGrantId: string, authorityGrantId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const storageKey =
+        `${VOICE_REVOKE_ID_PREFIX}${voiceGrantId}`;
+      let revokeRequestId = sessionStorage.getItem(storageKey);
+      if (!revokeRequestId) {
+        revokeRequestId = `voice-revoke-${crypto.randomUUID()}`;
+        sessionStorage.setItem(storageKey, revokeRequestId);
+      }
+
+      const message: RevokeAgentVoiceMessage = {
+        type: "revoke_agent_voice",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        revokeRequestId,
+        voiceGrantId,
+        authorityGrantId
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const openRtcCall = useCallback(
     (targetParticipantId: string) => {
       if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -1013,6 +1172,9 @@ export function useCommonlineRoom() {
     lastEvent,
     lastAcceptance,
     lastAuthorityTransfer,
+    lastVoiceAuthorityBootstrap,
+    lastAgentVoiceGrant,
+    lastAgentVoiceRevocation,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -1025,6 +1187,9 @@ export function useCommonlineRoom() {
     submitWork,
     acceptOutcome,
     transferAcceptAuthority,
+    bootstrapAgentVoiceAuthority,
+    grantAgentVoice,
+    revokeAgentVoice,
     openRtcCall,
     sendRtcSignal,
     joinGroupMedia,

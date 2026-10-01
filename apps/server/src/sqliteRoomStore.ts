@@ -4,6 +4,8 @@ import { DatabaseSync } from "node:sqlite";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
+  type AgentVoiceGrantReceipt,
+  type AgentVoiceRevocationReceipt,
   type Artifact,
   type AuthorityTransferReceipt,
   type Capability,
@@ -16,6 +18,7 @@ import {
   type RoomEvent,
   type RoomEventType,
   type RoomSnapshot,
+  type VoiceAuthorityBootstrapReceipt,
   type WorkItem,
   type WorkStatus
 } from "@commonline/protocol";
@@ -28,14 +31,15 @@ import {
   PersistenceConflictError
 } from "./roomStore";
 
-export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-k.1" as const;
+export const COMMONLINE_STORAGE_SCHEMA_VERSION = "p0-m.1" as const;
 const MIGRATABLE_SCHEMA_PAIRS = new Set([
   "p0-e.1|p0-d.1",
   "p0-f.1|p0-f.1",
   "p0-g.1|p0-g.1",
   "p0-h.1|p0-h.1",
   "p0-i.1|p0-i.1",
-  "p0-j.1|p0-j.1"
+  "p0-j.1|p0-j.1",
+  "p0-k.1|p0-k.1"
 ]);
 
 type SqlValue = string | number | null;
@@ -220,6 +224,56 @@ export class SQLiteRoomStore
         FOREIGN KEY (issued_grant_id) REFERENCES grant_receipts(grant_id)
       );
 
+      CREATE TABLE IF NOT EXISTS voice_authority_bootstraps (
+        bootstrap_receipt_id TEXT PRIMARY KEY,
+        bootstrap_id TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        actor_participant_id TEXT NOT NULL,
+        accept_authority_grant_id TEXT NOT NULL,
+        issued_grant_id TEXT NOT NULL,
+        committed_version INTEGER NOT NULL,
+        bootstrapped_at TEXT NOT NULL,
+        UNIQUE (room_id, bootstrap_id),
+        UNIQUE (room_id),
+        FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+        FOREIGN KEY (accept_authority_grant_id) REFERENCES grant_receipts(grant_id),
+        FOREIGN KEY (issued_grant_id) REFERENCES grant_receipts(grant_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_voice_grants (
+        voice_grant_id TEXT PRIMARY KEY,
+        grant_request_id TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        agent_participant_id TEXT NOT NULL,
+        voice_id TEXT NOT NULL,
+        audience_mode TEXT NOT NULL,
+        issued_by_participant_id TEXT NOT NULL,
+        authority_grant_id TEXT NOT NULL,
+        issued_at TEXT NOT NULL,
+        expires_at TEXT,
+        committed_version INTEGER NOT NULL,
+        UNIQUE (room_id, grant_request_id),
+        FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+        FOREIGN KEY (authority_grant_id) REFERENCES grant_receipts(grant_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_voice_revocations (
+        voice_revocation_id TEXT PRIMARY KEY,
+        revoke_request_id TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        voice_grant_id TEXT NOT NULL,
+        revoked_by_participant_id TEXT NOT NULL,
+        authority_grant_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        revoked_at TEXT NOT NULL,
+        committed_version INTEGER NOT NULL,
+        UNIQUE (room_id, revoke_request_id),
+        UNIQUE (room_id, voice_grant_id),
+        FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+        FOREIGN KEY (voice_grant_id) REFERENCES agent_voice_grants(voice_grant_id),
+        FOREIGN KEY (authority_grant_id) REFERENCES grant_receipts(grant_id)
+      );
+
       CREATE TABLE IF NOT EXISTS room_events (
         event_id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL,
@@ -252,6 +306,10 @@ export class SQLiteRoomStore
         ON grant_revocations(room_id);
       CREATE INDEX IF NOT EXISTS idx_transfers_room
         ON authority_transfers(room_id);
+      CREATE INDEX IF NOT EXISTS idx_voice_grants_room_agent
+        ON agent_voice_grants(room_id, agent_participant_id);
+      CREATE INDEX IF NOT EXISTS idx_voice_revocations_room
+        ON agent_voice_revocations(room_id);
     `);
 
     const getMeta = this.db.prepare(
@@ -413,6 +471,24 @@ export class SQLiteRoomStore
       )
       .all(roomId) as Record<string, unknown>[];
 
+    const voiceBootstrapRows = this.db
+      .prepare(
+        "SELECT bootstrap_receipt_id, bootstrap_id, actor_participant_id, accept_authority_grant_id, issued_grant_id, committed_version, bootstrapped_at FROM voice_authority_bootstraps WHERE room_id = ? ORDER BY committed_version"
+      )
+      .all(roomId) as Record<string, unknown>[];
+
+    const voiceGrantRows = this.db
+      .prepare(
+        "SELECT voice_grant_id, grant_request_id, agent_participant_id, voice_id, audience_mode, issued_by_participant_id, authority_grant_id, issued_at, expires_at, committed_version FROM agent_voice_grants WHERE room_id = ? ORDER BY committed_version"
+      )
+      .all(roomId) as Record<string, unknown>[];
+
+    const voiceRevocationRows = this.db
+      .prepare(
+        "SELECT voice_revocation_id, revoke_request_id, voice_grant_id, revoked_by_participant_id, authority_grant_id, reason, revoked_at, committed_version FROM agent_voice_revocations WHERE room_id = ? ORDER BY committed_version"
+      )
+      .all(roomId) as Record<string, unknown>[];
+
     const workRows = this.db
       .prepare(
         "SELECT work_item_id, requested_by, prompt, status, created_at FROM work_items WHERE room_id = ? ORDER BY rowid"
@@ -505,6 +581,103 @@ export class SQLiteRoomStore
       })
     );
 
+    const voiceAuthorityBootstraps: VoiceAuthorityBootstrapReceipt[] =
+      voiceBootstrapRows.map((row) => ({
+        bootstrapReceiptId: asString(
+          row.bootstrap_receipt_id,
+          "voice bootstrap receipt id"
+        ),
+        bootstrapId: asString(row.bootstrap_id, "voice bootstrap id"),
+        roomId,
+        actorParticipantId: asString(
+          row.actor_participant_id,
+          "voice bootstrap actor"
+        ),
+        acceptAuthorityGrantId: asString(
+          row.accept_authority_grant_id,
+          "voice bootstrap ACCEPT_OUTCOME grant"
+        ),
+        issuedGrantId: asString(
+          row.issued_grant_id,
+          "voice management issued grant"
+        ),
+        committedVersion: asNumber(
+          row.committed_version,
+          "voice bootstrap committed version"
+        ),
+        bootstrappedAt: asString(
+          row.bootstrapped_at,
+          "voice bootstrap time"
+        )
+      }));
+
+    const agentVoiceGrants: AgentVoiceGrantReceipt[] =
+      voiceGrantRows.map((row) => ({
+        voiceGrantId: asString(row.voice_grant_id, "voice grant id"),
+        grantRequestId: asString(
+          row.grant_request_id,
+          "voice grant request id"
+        ),
+        roomId,
+        agentParticipantId: asString(
+          row.agent_participant_id,
+          "voice grant agent"
+        ),
+        voiceId: asString(row.voice_id, "voice id"),
+        audienceMode: asString(
+          row.audience_mode,
+          "voice audience mode"
+        ) as "explicit-subscription",
+        issuedByParticipantId: asString(
+          row.issued_by_participant_id,
+          "voice grant issuer"
+        ),
+        authorityGrantId: asString(
+          row.authority_grant_id,
+          "voice grant authority"
+        ),
+        issuedAt: asString(row.issued_at, "voice grant issued_at"),
+        expiresAt: optionalString(row.expires_at),
+        committedVersion: asNumber(
+          row.committed_version,
+          "voice grant committed version"
+        )
+      }));
+
+    const agentVoiceRevocations: AgentVoiceRevocationReceipt[] =
+      voiceRevocationRows.map((row) => ({
+        voiceRevocationId: asString(
+          row.voice_revocation_id,
+          "voice revocation id"
+        ),
+        revokeRequestId: asString(
+          row.revoke_request_id,
+          "voice revoke request id"
+        ),
+        roomId,
+        voiceGrantId: asString(
+          row.voice_grant_id,
+          "revoked voice grant id"
+        ),
+        revokedByParticipantId: asString(
+          row.revoked_by_participant_id,
+          "voice revocation actor"
+        ),
+        authorityGrantId: asString(
+          row.authority_grant_id,
+          "voice revocation authority"
+        ),
+        reason: asString(
+          row.reason,
+          "voice revocation reason"
+        ) as "manual",
+        revokedAt: asString(row.revoked_at, "voice revoked_at"),
+        committedVersion: asNumber(
+          row.committed_version,
+          "voice revocation committed version"
+        )
+      }));
+
     const workItems: WorkItem[] = workRows.map((row) => ({
       id: asString(row.work_item_id, "work item id"),
       requestedBy: asString(row.requested_by, "work requested_by"),
@@ -554,6 +727,9 @@ export class SQLiteRoomStore
       grants,
       grantRevocations,
       authorityTransfers,
+      voiceAuthorityBootstraps,
+      agentVoiceGrants,
+      agentVoiceRevocations,
       workItems,
       artifacts,
       acceptances
@@ -625,6 +801,15 @@ export class SQLiteRoomStore
         );
 
       this.db
+        .prepare("DELETE FROM agent_voice_revocations WHERE room_id = ?")
+        .run(input.room.roomId);
+      this.db
+        .prepare("DELETE FROM agent_voice_grants WHERE room_id = ?")
+        .run(input.room.roomId);
+      this.db
+        .prepare("DELETE FROM voice_authority_bootstraps WHERE room_id = ?")
+        .run(input.room.roomId);
+      this.db
         .prepare("DELETE FROM authority_transfers WHERE room_id = ?")
         .run(input.room.roomId);
       this.db
@@ -686,6 +871,58 @@ export class SQLiteRoomStore
           revocation.revokedByParticipantId,
           revocation.reason,
           revocation.revokedAt
+        );
+      }
+
+      const insertVoiceBootstrap = this.db.prepare(
+        "INSERT INTO voice_authority_bootstraps(bootstrap_receipt_id, bootstrap_id, room_id, actor_participant_id, accept_authority_grant_id, issued_grant_id, committed_version, bootstrapped_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      );
+      for (const receipt of input.room.voiceAuthorityBootstraps) {
+        insertVoiceBootstrap.run(
+          receipt.bootstrapReceiptId,
+          receipt.bootstrapId,
+          input.room.roomId,
+          receipt.actorParticipantId,
+          receipt.acceptAuthorityGrantId,
+          receipt.issuedGrantId,
+          receipt.committedVersion,
+          receipt.bootstrappedAt
+        );
+      }
+
+      const insertVoiceGrant = this.db.prepare(
+        "INSERT INTO agent_voice_grants(voice_grant_id, grant_request_id, room_id, agent_participant_id, voice_id, audience_mode, issued_by_participant_id, authority_grant_id, issued_at, expires_at, committed_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      );
+      for (const receipt of input.room.agentVoiceGrants) {
+        insertVoiceGrant.run(
+          receipt.voiceGrantId,
+          receipt.grantRequestId,
+          input.room.roomId,
+          receipt.agentParticipantId,
+          receipt.voiceId,
+          receipt.audienceMode,
+          receipt.issuedByParticipantId,
+          receipt.authorityGrantId,
+          receipt.issuedAt,
+          receipt.expiresAt ?? null,
+          receipt.committedVersion
+        );
+      }
+
+      const insertVoiceRevocation = this.db.prepare(
+        "INSERT INTO agent_voice_revocations(voice_revocation_id, revoke_request_id, room_id, voice_grant_id, revoked_by_participant_id, authority_grant_id, reason, revoked_at, committed_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      );
+      for (const receipt of input.room.agentVoiceRevocations) {
+        insertVoiceRevocation.run(
+          receipt.voiceRevocationId,
+          receipt.revokeRequestId,
+          input.room.roomId,
+          receipt.voiceGrantId,
+          receipt.revokedByParticipantId,
+          receipt.authorityGrantId,
+          receipt.reason,
+          receipt.revokedAt,
+          receipt.committedVersion
         );
       }
 
@@ -793,6 +1030,9 @@ export class SQLiteRoomStore
       "artifacts",
       "acceptance_receipts",
       "authority_transfers",
+      "voice_authority_bootstraps",
+      "agent_voice_grants",
+      "agent_voice_revocations",
       "room_events",
       "identity_claims"
     ];

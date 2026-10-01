@@ -338,3 +338,26 @@ Commonline authority → media routing → Consumer stats observer
 ```
 
 The observer can fail without gaining permission to create or alter a route.
+
+
+## P0-m agent voice authority plane
+
+Agent voice authority is durable room state upstream of any renderer:
+
+```text
+ACCEPT_OUTCOME (one-time compatibility bootstrap)
+        ↓
+MANAGE_AGENT_VOICE
+        ↓
+AgentVoiceGrantReceipt
+        ↓
+future local TTS renderer
+        ↓
+agent-voice source
+        ↓
+SFU + explicit subscriptions
+```
+
+The bootstrap bridge is intentionally one-time. It does not make ACCEPT_OUTCOME a general media-delegation capability.
+
+Renderer state and synthesized audio remain outside durable storage. A renderer may consume authority but cannot create it.

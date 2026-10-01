@@ -337,3 +337,24 @@ Executable P0-k kinds are `human-microphone` and `sound-effect`. `shared-music`,
 All source policies currently require SPEAK, use explicit subscriptions, remain ephemeral, and default recording to not-authorized. Principal-kind restrictions still apply independently of SPEAK.
 
 SFU Producer creation revalidates the current source policy and policy ID. Consumer creation remains bound to RECEIVE_MEDIA plus the exact source subscription.
+
+
+## P0-m agent voice authority profile
+
+Wire schema: `p0-m.1`.
+
+P0-m adds the generic capability `MANAGE_AGENT_VOICE` plus specialized durable receipts for voice-authority bootstrap, agent voice grant, and agent voice revocation.
+
+New intents:
+
+```text
+bootstrap_agent_voice_authority
+grant_agent_voice
+revoke_agent_voice
+```
+
+The one-time bootstrap requires the exact active ACCEPT_OUTCOME grant and issues a separate MANAGE_AGENT_VOICE grant. Subsequent grant/revoke operations require MANAGE_AGENT_VOICE rather than ACCEPT_OUTCOME.
+
+Agent voice grants bind agent participant ID, voice ID, explicit-subscription audience, issuer, management authority grant, optional expiry, and committed room version.
+
+The `agent-voice` media-source policy remains reserved in P0-m. Its required authority is now `AGENT_VOICE_GRANT`, not generic SPEAK.
