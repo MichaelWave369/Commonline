@@ -11,6 +11,7 @@ import {
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
   type ExchangeResponseStatusMessage,
+  type ExternalEffectStatusMessage,
   type BootstrapAgentVoiceAuthorityMessage,
   type GroupMediaJoinMessage,
   type GroupMediaLeaveMessage,
@@ -35,6 +36,7 @@ import {
   type MediaSourceKind,
   type RequestedHumanRole,
   type RequestExchangeResponseMessage,
+  type RequestExternalEffectMessage,
   type RevokeAgentVoiceMessage,
   type RevokeAttentionLeaseMessage,
   type RevokeListeningShareMessage,
@@ -174,6 +176,8 @@ export function useCommonlineRoom() {
   const [lastEvent, setLastEvent] = useState<RoomEvent | null>(null);
   const [lastAcceptance, setLastAcceptance] =
     useState<AcceptanceReceipt | null>(null);
+  const [lastExternalEffectStatus, setLastExternalEffectStatus] =
+    useState<ExternalEffectStatusMessage | null>(null);
   const [lastAuthorityTransfer, setLastAuthorityTransfer] =
     useState<AuthorityTransferReceipt | null>(null);
   const [lastVoiceAuthorityBootstrap, setLastVoiceAuthorityBootstrap] =
@@ -493,6 +497,18 @@ export function useCommonlineRoom() {
           message.replayed
             ? "Recovered the original acceptance receipt after retry."
             : "Outcome accepted with a durable receipt."
+        );
+        return;
+      }
+
+      if (message.type === "external_effect_status") {
+        setLastExternalEffectStatus(message);
+        setNotice(
+          message.state === "blocked"
+            ? `External effect blocked: ${message.errorCode ?? "authority required"}.`
+            : message.state === "completed"
+              ? "Local proof effect completed under explicit execution authority."
+              : "Local proof effect failed."
         );
         return;
       }
@@ -924,6 +940,39 @@ export function useCommonlineRoom() {
         artifactId,
         authorityGrantId: grant.grantId
       };
+      socketRef.current.send(JSON.stringify(message));
+    },
+    [room]
+  );
+
+  const requestExternalEffect = useCallback(
+    (artifactId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) return;
+
+      const grant = room.grants.find(
+        (receipt) =>
+          receipt.subjectParticipantId === participantIdRef.current &&
+          receipt.capability === "EXECUTE_EXTERNAL_EFFECT" &&
+          !receipt.revokedAt &&
+          !room.grantRevocations.some(
+            (revocation) => revocation.grantId === receipt.grantId
+          ) &&
+          (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+      );
+
+      const message: RequestExternalEffectMessage = {
+        type: "request_external_effect",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        effectRequestId: `effect-${crypto.randomUUID()}`,
+        artifactId,
+        authorityGrantId: grant?.grantId ?? "no-execution-grant",
+        kind: "demo-marker",
+        target: "local-proof-sink"
+      };
+
+      setLastExternalEffectStatus(null);
       socketRef.current.send(JSON.stringify(message));
     },
     [room]
@@ -1475,6 +1524,7 @@ export function useCommonlineRoom() {
     resumeDelta,
     lastEvent,
     lastAcceptance,
+    lastExternalEffectStatus,
     lastAuthorityTransfer,
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
@@ -1497,6 +1547,7 @@ export function useCommonlineRoom() {
     disconnect,
     submitWork,
     acceptOutcome,
+    requestExternalEffect,
     transferAcceptAuthority,
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,

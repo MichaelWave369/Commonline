@@ -480,3 +480,26 @@ A client cannot obtain older events by claiming `acknowledgedVersion = 0`.
 If durable membership provenance is missing, the server fails closed and withholds older event replay rather than guessing.
 
 Retrospective history sharing is not implemented in P0-s.
+
+
+## P0-u external-effect firewall
+
+P0-u adds an isolated execution boundary downstream of durable artifact acceptance.
+
+```text
+accepted Artifact
+      +
+current RoomSnapshot version
+      +
+exact active EXECUTE_EXTERNAL_EFFECT grant
+      ↓
+ExternalEffectRuntime
+      ↓
+LocalProofEffectExecutor
+```
+
+The local proof executor is deliberately non-effectful outside process memory. It exists to prove that the authorization check occurs immediately before execution.
+
+P0 does not issue `EXECUTE_EXTERNAL_EFFECT` grants. Therefore accepted artifacts remain inert by default.
+
+The effect request is ephemeral and does not mutate room state. No effect receipt is persisted in P0-u because the production path cannot become authorized yet.

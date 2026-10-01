@@ -29,6 +29,10 @@ import { AttentionLeaseRegistry } from "./attentionLeaseRegistry";
 import { AgentVoiceRuntime } from "./agentVoiceRuntime";
 import { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import { EphemeralWorkPlane } from "./ephemeralWork";
+import {
+  LocalProofEffectExecutor,
+  requestExternalEffect
+} from "./externalEffectRuntime";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
 import {
@@ -64,6 +68,7 @@ const service = new RoomService(
   store
 );
 const workPlane = new EphemeralWorkPlane();
+const externalEffectExecutor = new LocalProofEffectExecutor();
 const agent = new MockSilentAgent("Vessie");
 const voiceRenderer = createLocalVoiceRenderer();
 const speechRecognizer = createLocalSpeechRecognizer();
@@ -89,6 +94,7 @@ const httpServer = createServer((request, response) => {
         attentionLeases: "ephemeral-one-turn-p0-o",
         governedListening: "bounded-push-share-p0-p",
         explicitExchangeBinding: "heard-plus-attention-p0-q",
+        externalEffectFirewall: "local-proof-sink-p0-u",
         speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })
@@ -515,6 +521,22 @@ function parseMessage(raw: RawData): ClientMessage | null {
     }
 
     if (
+      parsed.type === "request_external_effect" &&
+      typeof parsed.effectRequestId === "string" &&
+      parsed.effectRequestId.length > 0 &&
+      typeof parsed.artifactId === "string" &&
+      parsed.artifactId.length > 0 &&
+      typeof parsed.authorityGrantId === "string" &&
+      parsed.authorityGrantId.length > 0 &&
+      parsed.kind === "demo-marker" &&
+      parsed.target === "local-proof-sink" &&
+      Number.isInteger(parsed.baseVersion) &&
+      Number(parsed.baseVersion) >= 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
       parsed.type === "grant_listening_share" &&
       typeof parsed.agentParticipantId === "string" &&
       parsed.agentParticipantId.length > 0
@@ -794,7 +816,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-q fields."
+          message: "join_room is missing required Commonline fields."
         });
         return;
       }
@@ -878,6 +900,36 @@ wss.on("connection", (socket) => {
         code: "INVALID_SESSION",
         message: "This connection has been superseded by a newer session."
       });
+      return;
+    }
+
+    if (message.type === "request_external_effect") {
+      const room = service.getRoom(session.roomId);
+      if (!room) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "ROOM_NOT_FOUND",
+          message: "Room no longer exists."
+        });
+        return;
+      }
+
+      const result = await requestExternalEffect({
+        room,
+        actorParticipantId: session.participantId,
+        message,
+        executor: externalEffectExecutor
+      });
+
+      send(socket, result.status);
+      if (!result.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: result.code,
+          message: result.message,
+          room
+        });
+      }
       return;
     }
 

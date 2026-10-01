@@ -8,7 +8,10 @@ import {
   joinParticipant,
   SILENT_AGENT_PARTICIPANT_ID
 } from "@commonline/room-core";
-import type { RoomEvent } from "@commonline/protocol";
+import {
+  COMMONLINE_WIRE_SCHEMA_VERSION,
+  type RoomEvent
+} from "@commonline/protocol";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { RoomService } from "./roomService";
 import {
@@ -395,7 +398,7 @@ describe("P0-e SQLite durability", () => {
     store.close();
   });
 
-  it("explicitly migrates p0-e.1 / p0-d.1 metadata to the P0-q schema", () => {
+  it("explicitly migrates p0-e.1 / p0-d.1 metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -438,12 +441,12 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     expect(migrated.metadata().migrated_at).toBeTruthy();
-    expect(migrated.loadRoom("legacy-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.loadRoom("legacy-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
-  it("migrates P0-f metadata forward to P0-q", () => {
+  it("migrates P0-f metadata forward to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -486,12 +489,12 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0f-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0f-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
-  it("migrates the immediately previous P0-g metadata to P0-q", () => {
+  it("migrates the immediately previous P0-g metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -534,13 +537,13 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0g-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0g-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
-  it("migrates the immediately previous P0-h metadata to P0-q", () => {
+  it("migrates the immediately previous P0-h metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -583,13 +586,13 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0h-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0h-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
-  it("migrates the immediately previous P0-i metadata to P0-q", () => {
+  it("migrates the immediately previous P0-i metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -632,14 +635,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0i-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0i-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-j metadata to P0-q", () => {
+  it("migrates the immediately previous P0-j metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -682,14 +685,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0j-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0j-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-k metadata to P0-q", () => {
+  it("migrates the immediately previous P0-k metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -732,14 +735,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0k-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0k-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-m metadata to P0-q", () => {
+  it("migrates the immediately previous P0-m metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -782,14 +785,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0m-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0m-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-n metadata to P0-q", () => {
+  it("migrates the immediately previous P0-n metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -832,14 +835,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0n-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0n-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-o metadata to P0-q", () => {
+  it("migrates the immediately previous P0-o metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -882,14 +885,14 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0o-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0o-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
 
 
-  it("migrates the immediately previous P0-p metadata to P0-q", () => {
+  it("migrates the immediately previous P0-p metadata to the current wire schema", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -932,11 +935,65 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().storage_version).toBe(
       COMMONLINE_STORAGE_SCHEMA_VERSION
     );
-    expect(migrated.metadata().wire_schema_version).toBe("p0-q.1");
-    expect(migrated.loadRoom("p0p-room")?.schemaVersion).toBe("p0-q.1");
+    expect(migrated.metadata().wire_schema_version).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
+    expect(migrated.loadRoom("p0p-room")?.schemaVersion).toBe(COMMONLINE_WIRE_SCHEMA_VERSION);
     migrated.close();
   });
 
+
+
+  it("migrates P0-q wire metadata forward to P0-u without changing the storage layout", () => {
+    const path = databasePath();
+    const raw = new DatabaseSync(path);
+
+    raw.exec(`
+      CREATE TABLE schema_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE rooms (
+        room_id TEXT PRIMARY KEY,
+        purpose TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        wire_schema_version TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("storage_version", "p0-q.1");
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("wire_schema_version", "p0-q.1");
+    raw
+      .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
+      .run("created_at", new Date().toISOString());
+    raw
+      .prepare(
+        "INSERT INTO rooms(room_id, purpose, version, wire_schema_version, updated_at) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(
+        "p0q-room",
+        "p0-q room",
+        0,
+        "p0-q.1",
+        new Date().toISOString()
+      );
+    raw.close();
+
+    const migrated = new SQLiteRoomStore(path);
+    expect(migrated.metadata().storage_version).toBe(
+      COMMONLINE_STORAGE_SCHEMA_VERSION
+    );
+    expect(migrated.metadata().wire_schema_version).toBe(
+      COMMONLINE_WIRE_SCHEMA_VERSION
+    );
+    expect(migrated.loadRoom("p0q-room")?.schemaVersion).toBe(
+      COMMONLINE_WIRE_SCHEMA_VERSION
+    );
+    expect(migrated.metadata().migrated_at).toBeTruthy();
+    migrated.close();
+  });
 
 
 });

@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-q.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-u.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -267,6 +267,20 @@ export interface AcceptOutcomeMessage {
   workItemId: string;
   artifactId: string;
   authorityGrantId: string;
+}
+
+export type ExternalEffectKind = "demo-marker";
+
+export interface RequestExternalEffectMessage {
+  type: "request_external_effect";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  effectRequestId: string;
+  artifactId: string;
+  authorityGrantId: string;
+  kind: ExternalEffectKind;
+  target: "local-proof-sink";
 }
 
 export interface TransferAcceptAuthorityMessage {
@@ -760,6 +774,7 @@ export type ClientMessage =
   | JoinRoomMessage
   | SubmitWorkMessage
   | AcceptOutcomeMessage
+  | RequestExternalEffectMessage
   | TransferAcceptAuthorityMessage
   | BootstrapAgentVoiceAuthorityMessage
   | GrantAgentVoiceMessage
@@ -982,6 +997,22 @@ export interface AgentWorkStatusMessage {
   state: AgentWorkState;
 }
 
+export type ExternalEffectState = "blocked" | "completed" | "failed";
+
+export interface ExternalEffectStatusMessage {
+  type: "external_effect_status";
+  requestId: string;
+  roomId: string;
+  effectRequestId: string;
+  artifactId: string;
+  kind: ExternalEffectKind;
+  target: "local-proof-sink";
+  state: ExternalEffectState;
+  authorityGrantId: string;
+  marker?: string;
+  errorCode?: RejectionCode;
+}
+
 export interface RtcSignalRelayMessage {
   type: "rtc_signal";
   requestId: string;
@@ -1089,6 +1120,7 @@ export type ServerMessage =
   | ListeningShareResultMessage
   | ExchangeResponseStatusMessage
   | AgentWorkStatusMessage
+  | ExternalEffectStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage
   | RtcSignalRelayMessage

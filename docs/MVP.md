@@ -746,3 +746,31 @@ See [EXPERIENCE_PROOF_P0T.md](EXPERIENCE_PROOF_P0T.md).
 ### P0-t boundary
 
 This rung proves technical composition, not human value. The roadmap's claims about useful real work and less reconstruction than a voice + notes baseline still require the planned human pilot.
+
+
+## P0-u — external-effect authority firewall
+
+P0-u makes the design-study rule `ACCEPT_OUTCOME != EXECUTE_EXTERNAL_EFFECT` executable.
+
+Implemented:
+
+- new `request_external_effect` client intent
+- fixed P0 effect kind `demo-marker`
+- fixed target `local-proof-sink`
+- accepted-artifact binding
+- exact current room-version binding
+- exact active `EXECUTE_EXTERNAL_EFFECT` grant check
+- revoked and expired execution grants rejected
+- acceptance authority cannot substitute for execution authority
+- P0 issues no execution grants by default
+- local proof executor performs no network, payment, messaging, deployment, filesystem, or device effect
+- browser governance probe proves accepted work still returns `blocked / NOT_AUTHORIZED`
+- unit tests prove the executor remains uninvoked without authority and runs only with a fabricated exact test grant
+- wire advances to `p0-u.1`
+- physical SQLite storage layout remains `p0-q.1`; existing P0-q metadata migrates in place
+
+See [EXTERNAL_EFFECT_FIREWALL_P0U.md](EXTERNAL_EFFECT_FIREWALL_P0U.md).
+
+### P0-u boundary
+
+There is still no product path for issuing `EXECUTE_EXTERNAL_EFFECT` grants. P0-u proves the firewall before CommonLine gains any real effectful adapter.
