@@ -1,6 +1,8 @@
+import { randomInt } from "node:crypto";
 import * as mediasoup from "mediasoup";
 import type {
   Consumer,
+  DirectTransport,
   DtlsParameters,
   Producer,
   Router,
@@ -17,6 +19,12 @@ import type {
   SfuTransportOptions
 } from "@commonline/protocol";
 import type { GroupMediaSession } from "./groupMediaRegistry";
+import {
+  buildPcmuRtpPacket,
+  pcm16ToPcmu,
+  resamplePcm16,
+  type Pcm16Audio
+} from "./audioPcm";
 
 interface ParticipantSfuState {
   sendTransport?: WebRtcTransport;
@@ -25,10 +33,20 @@ interface ParticipantSfuState {
   consumers: Map<string, Consumer>;
 }
 
+interface DirectAudioState {
+  sequence: number;
+  timestamp: number;
+  ssrc: number;
+  lastSentAt?: number;
+  queue: Promise<void>;
+}
+
 interface RoomSfuState {
   mediaSessionId: string;
   generation: number;
   router: Router;
+  directTransport?: DirectTransport;
+  directAudio: Map<string, DirectAudioState>;
   participants: Map<string, ParticipantSfuState>;
   sourceProducers: Map<
     string,
@@ -91,6 +109,13 @@ const AUDIO_CODECS: RouterRtpCodecCapability[] = [
     parameters: {
       useinbandfec: 1
     }
+  },
+  {
+    kind: "audio",
+    mimeType: "audio/PCMU",
+    preferredPayloadType: 0,
+    clockRate: 8000,
+    channels: 1
   }
 ];
 
@@ -316,6 +341,142 @@ export class MediasoupSfuAdapter {
     return producer.id;
   }
 
+  async ensureDirectAudioProducer(input: {
+    session: GroupMediaSession;
+    ownerParticipantId: string;
+    sourceId: string;
+  }) {
+    const room = await this.ensureRoom(input.session);
+    const existing = room.sourceProducers.get(input.sourceId);
+    if (existing && !existing.producer.closed) {
+      return existing.producer.id;
+    }
+
+    if (!room.directTransport || room.directTransport.closed) {
+      room.directTransport = await room.router.createDirectTransport({
+        appData: {
+          roomId: input.session.roomId,
+          mediaSessionId: input.session.mediaSessionId,
+          generation: input.session.generation,
+          purpose: "server-local-audio"
+        }
+      });
+    }
+
+    const ssrc = randomInt(1, 0x100000000);
+    const producer = await room.directTransport.produce({
+      kind: "audio",
+      rtpParameters: {
+        codecs: [
+          {
+            mimeType: "audio/PCMU",
+            payloadType: 0,
+            clockRate: 8000,
+            channels: 1,
+            parameters: {},
+            rtcpFeedback: []
+          }
+        ],
+        encodings: [{ ssrc }]
+      },
+      appData: {
+        roomId: input.session.roomId,
+        mediaSessionId: input.session.mediaSessionId,
+        generation: input.session.generation,
+        participantId: input.ownerParticipantId,
+        sourceId: input.sourceId,
+        sourceTransport: "direct-pcmu"
+      }
+    });
+
+    room.sourceProducers.set(input.sourceId, {
+      ownerParticipantId: input.ownerParticipantId,
+      producer
+    });
+    room.directAudio.set(input.sourceId, {
+      sequence: randomInt(0, 0x10000),
+      timestamp: randomInt(0, 0x100000000) >>> 0,
+      ssrc,
+      queue: Promise.resolve()
+    });
+
+    producer.observer.on("close", () => {
+      const current = room.sourceProducers.get(input.sourceId);
+      if (current?.producer === producer) {
+        room.sourceProducers.delete(input.sourceId);
+      }
+      room.directAudio.delete(input.sourceId);
+    });
+
+    return producer.id;
+  }
+
+  async injectDirectPcm16(input: {
+    session: GroupMediaSession;
+    ownerParticipantId: string;
+    sourceId: string;
+    audio: Pcm16Audio;
+  }) {
+    await this.ensureDirectAudioProducer(input);
+    const room = this.rooms.get(input.session.roomId);
+    const current = room?.sourceProducers.get(input.sourceId);
+    const state = room?.directAudio.get(input.sourceId);
+
+    if (!room || !current || !state || current.producer.closed) {
+      throw new Error("SFU_SOURCE_NOT_READY");
+    }
+
+    const pcm8k = resamplePcm16(input.audio, 8000);
+    const pcmu = pcm16ToPcmu(pcm8k);
+    const frameSamples = 160;
+
+    const send = async () => {
+      if (state.lastSentAt) {
+        const elapsedMs = Math.max(0, Date.now() - state.lastSentAt);
+        state.timestamp =
+          (state.timestamp + Math.round(elapsedMs * 8)) >>> 0;
+      }
+
+      for (let offset = 0; offset < pcmu.length; offset += frameSamples) {
+        if (current.producer.closed) {
+          throw new Error("SFU_SOURCE_NOT_READY");
+        }
+
+        const payload = pcmu.subarray(
+          offset,
+          Math.min(pcmu.length, offset + frameSamples)
+        );
+        const packet = buildPcmuRtpPacket({
+          payload,
+          sequence: state.sequence,
+          timestamp: state.timestamp,
+          ssrc: state.ssrc,
+          marker: offset === 0,
+          payloadType: 0
+        });
+
+        current.producer.send(packet);
+        state.sequence = (state.sequence + 1) & 0xffff;
+        state.timestamp =
+          (state.timestamp + payload.length) >>> 0;
+        state.lastSentAt = Date.now();
+
+        if (offset + frameSamples < pcmu.length) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+    };
+
+    state.queue = state.queue.then(send, send);
+    await state.queue;
+
+    return {
+      producerId: current.producer.id,
+      samplesSent: pcm8k.length,
+      durationMs: Math.round((pcm8k.length / 8000) * 1000)
+    };
+  }
+
   async consume(input: {
     session: GroupMediaSession;
     participantId: string;
@@ -456,6 +617,7 @@ export class MediasoupSfuAdapter {
       ) {
         current.producer.close();
         room.sourceProducers.delete(sourceId);
+        room.directAudio.delete(sourceId);
         this.removeProducerFromParticipant(
           room,
           current.ownerParticipantId,
@@ -553,6 +715,7 @@ export class MediasoupSfuAdapter {
       mediaSessionId: session.mediaSessionId,
       generation: session.generation,
       router,
+      directAudio: new Map(),
       participants: new Map(),
       sourceProducers: new Map()
     };

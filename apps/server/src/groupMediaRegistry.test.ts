@@ -8,7 +8,7 @@ function policy(kind: "human-microphone" | "sound-effect") {
   return resolved;
 }
 
-describe("P0-k group media registry", () => {
+describe("P0-n group media registry", () => {
   it("admits at most three humans", () => {
     const registry = new GroupMediaRegistry();
 
@@ -85,7 +85,7 @@ describe("P0-k group media registry", () => {
       state?.sourcePolicies.find(
         (item) => item.kind === "agent-voice"
       )?.executionState
-    ).toBe("reserved");
+    ).toBe("executable");
   });
 
   it("requires an explicit directed subscription before pair signaling", () => {
@@ -191,4 +191,50 @@ describe("P0-k group media registry", () => {
       first.session.generation + 1
     );
   });
+  it("publishes and removes a trusted agent voice source without adding the agent as a human media participant", () => {
+    const registry = new GroupMediaRegistry();
+    registry.join({ roomId: "room", participantId: "alice" });
+    const agentPolicy = mediaSourcePolicy("agent-voice");
+    if (!agentPolicy) throw new Error("missing agent voice policy");
+
+    const published = registry.publishTrustedSource({
+      roomId: "room",
+      ownerParticipantId: "agent-vessie",
+      kind: "agent-voice",
+      label: "Vessie voice",
+      policy: agentPolicy
+    });
+    expect(published.ok).toBe(true);
+    if (!published.ok) return;
+
+    expect(
+      published.session.participants.some(
+        (participant) => participant.participantId === "agent-vessie"
+      )
+    ).toBe(false);
+    expect(
+      published.session.sources.find(
+        (source) => source.kind === "agent-voice"
+      )?.ownerParticipantId
+    ).toBe("agent-vessie");
+
+    registry.subscribe({
+      roomId: "room",
+      participantId: "alice",
+      sourceId: published.session.sources.find(
+        (source) => source.kind === "agent-voice"
+      )!.sourceId
+    });
+
+    const remaining = registry.unpublishTrustedSource({
+      roomId: "room",
+      ownerParticipantId: "agent-vessie",
+      kind: "agent-voice"
+    });
+    expect(
+      remaining?.sources.some((source) => source.kind === "agent-voice")
+    ).toBe(false);
+    expect(remaining?.subscriptions).toHaveLength(0);
+  });
+
 });

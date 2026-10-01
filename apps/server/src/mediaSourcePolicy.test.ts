@@ -4,7 +4,7 @@ import {
   mediaSourcePolicies
 } from "./mediaSourcePolicy";
 
-describe("P0-m media source policy", () => {
+describe("P0-n media source policy", () => {
   it("allows a human microphone only with SPEAK authority", () => {
     expect(
       evaluateMediaSourcePolicy({
@@ -45,7 +45,7 @@ describe("P0-m media source policy", () => {
     });
     expect(decision.ok).toBe(false);
     if (!decision.ok) {
-      expect(decision.code).toBe("MEDIA_SOURCE_KIND_UNSUPPORTED");
+      expect(decision.code).toBe("MEDIA_SOURCE_POLICY_DENIED");
     }
   });
 
@@ -63,6 +63,10 @@ describe("P0-m media source policy", () => {
       catalog.find((policy) => policy.kind === "agent-voice")
         ?.requiredAuthority
     ).toBe("AGENT_VOICE_GRANT");
+    expect(
+      catalog.find((policy) => policy.kind === "agent-voice")
+        ?.executionState
+    ).toBe("executable");
     expect(
       catalog.find((policy) => policy.kind === "system-tone")
         ?.allowedPublisherKinds

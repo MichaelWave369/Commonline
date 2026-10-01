@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-m.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-n.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -308,6 +308,18 @@ export interface RevokeAgentVoiceMessage {
   revokeRequestId: string;
   voiceGrantId: string;
   authorityGrantId: string;
+}
+
+export type AgentVoiceUtteranceKind = "authority-proof";
+
+export interface RequestAgentVoiceUtteranceMessage {
+  type: "request_agent_voice_utterance";
+  requestId: string;
+  roomId: string;
+  agentParticipantId: string;
+  voiceGrantId: string;
+  authorityGrantId: string;
+  utteranceKind: AgentVoiceUtteranceKind;
 }
 
 export interface RtcIceServerConfig {
@@ -640,6 +652,7 @@ export type ClientMessage =
   | BootstrapAgentVoiceAuthorityMessage
   | GrantAgentVoiceMessage
   | RevokeAgentVoiceMessage
+  | RequestAgentVoiceUtteranceMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
   | RtcSignalClientMessage
@@ -735,6 +748,25 @@ export interface AgentVoiceRevocationReceiptMessage {
   replayed: boolean;
 }
 
+export type AgentVoiceUtteranceState =
+  | "queued"
+  | "rendering"
+  | "speaking"
+  | "completed"
+  | "failed";
+
+export interface AgentVoiceUtteranceStatusMessage {
+  type: "agent_voice_utterance_status";
+  requestId: string;
+  roomId: string;
+  utteranceId: string;
+  agentParticipantId: string;
+  voiceId: string;
+  sourceId?: string;
+  state: AgentVoiceUtteranceState;
+  errorCode?: string;
+}
+
 export interface AgentWorkStatusMessage {
   type: "agent_work_status";
   roomId: string;
@@ -779,6 +811,9 @@ export type RejectionCode =
   | "VOICE_GRANT_NOT_FOUND"
   | "VOICE_GRANT_ALREADY_ACTIVE"
   | "VOICE_GRANT_ALREADY_REVOKED"
+  | "VOICE_RENDERER_UNAVAILABLE"
+  | "VOICE_UTTERANCE_BUSY"
+  | "VOICE_GROUP_MEDIA_REQUIRED"
   | "MEDIA_BUSY"
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
@@ -818,6 +853,7 @@ export type ServerMessage =
   | VoiceAuthorityBootstrapReceiptMessage
   | AgentVoiceGrantReceiptMessage
   | AgentVoiceRevocationReceiptMessage
+  | AgentVoiceUtteranceStatusMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage

@@ -563,3 +563,28 @@ Implemented:
 - P0-k -> P0-m schema migration
 
 See [AGENT_VOICE_AUTHORITY_P0M.md](AGENT_VOICE_AUTHORITY_P0M.md).
+
+
+## P0-n — local agent voice renderer
+
+P0-n activates the first renderer capability behind P0-m voice authority.
+
+Implemented:
+
+- optional local Piper CLI renderer
+- no automatic model download
+- deterministic non-speech CI renderer
+- agent-authored bounded authority-proof utterance
+- executable `agent-voice` source policy
+- trusted agent-owned group-media source
+- mediasoup DirectTransport
+- 8 kHz PCMU RTP injection
+- content-free utterance status plane
+- exact MANAGE_AGENT_VOICE request authorization
+- exact active voice-grant revalidation
+- explicit subscriber-only delivery
+- revocation tears down source, Producer, subscriptions, and Consumers
+- P0-m -> P0-n wire/storage metadata migration
+- three-browser live agent voice RTP acceptance
+
+See [LOCAL_AGENT_VOICE_P0N.md](LOCAL_AGENT_VOICE_P0N.md).

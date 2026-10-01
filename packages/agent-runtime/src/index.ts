@@ -3,10 +3,19 @@ import type { Artifact, WorkItem } from "@commonline/protocol";
 export interface SilentAgent {
   readonly name: string;
   perform(work: WorkItem): Promise<Artifact>;
+  composeVoiceProof(): Promise<string>;
 }
 
 export class MockSilentAgent implements SilentAgent {
   constructor(public readonly name: string) {}
+
+  async composeVoiceProof(): Promise<string> {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    return (
+      "Vessie here. This voice is active only because Commonline holds a current " +
+      "room-scoped voice grant, and only explicit subscribers should receive it."
+    );
+  }
 
   async perform(work: WorkItem): Promise<Artifact> {
     await new Promise((resolve) => setTimeout(resolve, 700));
