@@ -5,6 +5,7 @@ import {
   type AcceptOutcomeMessage,
   type AgentVoiceGrantReceipt,
   type AgentVoiceRevocationReceipt,
+  type AgentVoiceUtteranceStatusMessage,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
   type BootstrapAgentVoiceAuthorityMessage,
@@ -26,6 +27,7 @@ import {
   type MediaSourceKind,
   type RequestedHumanRole,
   type RevokeAgentVoiceMessage,
+  type RequestAgentVoiceUtteranceMessage,
   type RoomEvent,
   type RoomSnapshot,
   type RtcCallOpenMessage,
@@ -167,6 +169,8 @@ export function useCommonlineRoom() {
     useState<AgentVoiceGrantReceipt | null>(null);
   const [lastAgentVoiceRevocation, setLastAgentVoiceRevocation] =
     useState<AgentVoiceRevocationReceipt | null>(null);
+  const [lastAgentVoiceUtteranceStatus, setLastAgentVoiceUtteranceStatus] =
+    useState<AgentVoiceUtteranceStatusMessage | null>(null);
   const [rtcInbox, setRtcInbox] = useState<RtcSignalRelayMessage[]>([]);
   const [rtcSessionInbox, setRtcSessionInbox] = useState<RtcCallSessionMessage[]>([]);
   const [groupRtcInbox, setGroupRtcInbox] = useState<GroupRtcSignalRelayMessage[]>([]);
@@ -518,6 +522,18 @@ export function useCommonlineRoom() {
             ? "Recovered the original agent-voice revocation receipt."
             : "Agent voice revoked with a durable receipt."
         );
+        return;
+      }
+
+      if (message.type === "agent_voice_utterance_status") {
+        setLastAgentVoiceUtteranceStatus(message);
+        if (message.state === "failed") {
+          setNotice(
+            `Agent voice failed: ${message.errorCode ?? "unknown renderer error"}`
+          );
+        } else if (message.state === "completed") {
+          setNotice("Agent voice utterance completed through the governed renderer.");
+        }
         return;
       }
 
@@ -938,6 +954,31 @@ export function useCommonlineRoom() {
     [room]
   );
 
+  const requestAgentVoiceUtterance = useCallback(
+    (
+      agentParticipantId: string,
+      voiceGrantId: string,
+      authorityGrantId: string
+    ) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      const message: RequestAgentVoiceUtteranceMessage = {
+        type: "request_agent_voice_utterance",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        agentParticipantId,
+        voiceGrantId,
+        authorityGrantId,
+        utteranceKind: "authority-proof"
+      };
+      socketRef.current.send(JSON.stringify(message));
+      return true;
+    },
+    [room]
+  );
+
   const openRtcCall = useCallback(
     (targetParticipantId: string) => {
       if (!room || socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -1175,6 +1216,7 @@ export function useCommonlineRoom() {
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
     lastAgentVoiceRevocation,
+    lastAgentVoiceUtteranceStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -1190,6 +1232,7 @@ export function useCommonlineRoom() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    requestAgentVoiceUtterance,
     openRtcCall,
     sendRtcSignal,
     joinGroupMedia,
