@@ -167,3 +167,32 @@ If SQLite fails, the in-memory authoritative room is not advanced.
 The database persists identity and governed outcomes but deliberately does not persist runtime presence state. Humans recover offline after restart and must establish a new live session.
 
 Scratch, status pulses, sessions, signaling, and media stay outside the store.
+
+
+## P0-f identity plane
+
+The transport now has an identity gate before room admission:
+
+```text
+WebSocket
+   ↓
+identity challenge
+   ↓
+signature verification
+   ↓
+authenticated participant/session binding
+   ↓
+room join
+```
+
+Identity claims live beside room storage but do not grant room capability.
+
+The private key remains browser-side. The server stores only the public key and a recovery-code hash.
+
+### Authority handoff
+
+`ACCEPT_OUTCOME` can be transferred atomically from one human participant to another.
+
+The room transition writes a grant revocation receipt, replacement grant, authority-transfer receipt, role projection, and event in the same durable SQLite transaction.
+
+The immutable receipt chain, not the role string, is the authority history.
