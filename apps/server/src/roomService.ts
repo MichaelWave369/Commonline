@@ -2,12 +2,14 @@ import type {
   AcceptOutcomeMessage,
   AcceptanceReceipt,
   Artifact,
+  AuthorityTransferReceipt,
   RejectionCode,
   RequestedHumanRole,
   RoomEvent,
   RoomEventType,
   RoomSnapshot,
   SubmitWorkMessage,
+  TransferAcceptAuthorityMessage,
   WorkItem
 } from "@commonline/protocol";
 import {
@@ -18,7 +20,8 @@ import {
   leaveParticipant,
   proposeArtifact,
   SILENT_AGENT_PARTICIPANT_ID,
-  submitWork
+  submitWork,
+  transferAcceptAuthority
 } from "@commonline/room-core";
 import type { DurableRoomStore } from "./roomStore";
 
@@ -33,6 +36,7 @@ export type AcceptedIntent = {
   event?: RoomEvent;
   work?: WorkItem;
   acceptance?: AcceptanceReceipt;
+  authorityTransfer?: AuthorityTransferReceipt;
   replayed?: boolean;
 };
 
@@ -42,6 +46,7 @@ export type RejectedIntent = {
   message: string;
   room?: RoomSnapshot;
   canonicalAcceptance?: AcceptanceReceipt;
+  canonicalTransfer?: AuthorityTransferReceipt;
 };
 
 export type IntentResult = AcceptedIntent | RejectedIntent;
@@ -257,7 +262,10 @@ export class RoomService {
 
   applyIntent(
     actorParticipantId: string,
-    intent: SubmitWorkMessage | AcceptOutcomeMessage
+    intent:
+      | SubmitWorkMessage
+      | AcceptOutcomeMessage
+      | TransferAcceptAuthorityMessage
   ): IntentResult {
     const record = this.record(intent.roomId);
     if (!record) {
@@ -283,9 +291,9 @@ export class RoomService {
       };
     }
 
-    // Idempotent acceptance replay is checked before stale-version rejection.
-    // If the process died after SQLite COMMIT but before the response reached
-    // the browser, a retry after restart returns the original receipt.
+    // Idempotent receipts are checked before stale-version rejection. If the
+    // process died after SQLite COMMIT but before the response reached the
+    // browser, retrying the same stable id returns the original receipt.
     if (intent.type === "accept_outcome") {
       const prior = record.room.acceptances.find(
         (receipt) => receipt.acceptId === intent.acceptId
@@ -295,6 +303,20 @@ export class RoomService {
           ok: true,
           room: record.room,
           acceptance: prior,
+          replayed: true
+        };
+      }
+    }
+
+    if (intent.type === "transfer_accept_authority") {
+      const prior = record.room.authorityTransfers.find(
+        (receipt) => receipt.transferId === intent.transferId
+      );
+      if (prior) {
+        return {
+          ok: true,
+          room: record.room,
+          authorityTransfer: prior,
           replayed: true
         };
       }
@@ -311,6 +333,14 @@ export class RoomService {
 
     if (intent.type === "submit_work") {
       return this.submitWork(record, actorParticipantId, intent);
+    }
+
+    if (intent.type === "transfer_accept_authority") {
+      return this.transferAcceptAuthority(
+        record,
+        actorParticipantId,
+        intent
+      );
     }
 
     return this.acceptOutcome(record, actorParticipantId, intent);
@@ -425,6 +455,65 @@ export class RoomService {
       room: record.room,
       event,
       acceptance: transition.receipt,
+      replayed: false
+    };
+  }
+
+  private transferAcceptAuthority(
+    record: RoomRecord,
+    actorParticipantId: string,
+    intent: TransferAcceptAuthorityMessage
+  ): IntentResult {
+    const priorVersion = record.room.version;
+    const transition = transferAcceptAuthority(record.room, {
+      transferId: intent.transferId,
+      actorParticipantId,
+      targetParticipantId: intent.targetParticipantId,
+      authorityGrantId: intent.authorityGrantId
+    });
+
+    if (!transition.ok) {
+      return {
+        ok: false,
+        code: transition.code,
+        message: transition.message,
+        room: record.room,
+        canonicalTransfer: transition.canonicalTransfer
+      };
+    }
+
+    if (transition.replayed) {
+      return {
+        ok: true,
+        room: record.room,
+        authorityTransfer: transition.receipt,
+        replayed: true
+      };
+    }
+
+    const target = transition.room.participants.find(
+      (participant) => participant.id === intent.targetParticipantId
+    );
+
+    const event = eventFor({
+      room: transition.room,
+      type: "accept_authority_transferred",
+      actorId: actorParticipantId,
+      summary: `Transferred ACCEPT_OUTCOME authority to ${target?.name ?? intent.targetParticipantId}.`
+    });
+
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
+
+    return {
+      ok: true,
+      room: record.room,
+      event,
+      authorityTransfer: transition.receipt,
       replayed: false
     };
   }
