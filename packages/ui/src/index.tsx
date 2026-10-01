@@ -1,9 +1,15 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
+import type { ButtonHTMLAttributes, HTMLAttributes, PropsWithChildren } from "react";
 
-export function Card({ children }: PropsWithChildren) {
+export function Card({
+  children,
+  style,
+  ...props
+}: PropsWithChildren<HTMLAttributes<HTMLElement>>) {
   return (
     <section
+      {...props}
       style={{
+        ...style,
         background: "#0b1519",
         border: "1px solid #173039",
         borderRadius: 18,
