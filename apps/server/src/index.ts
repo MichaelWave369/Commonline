@@ -5,6 +5,7 @@ import {
   type AgentWorkStatusMessage,
   type ClientMessage,
   type IntentRejectedMessage,
+  type MediaSourceKind,
   type RoomEventMessage,
   type RoomSnapshotMessage,
   type RtcSignalPayload,
@@ -194,6 +195,16 @@ function reject(
   send(socket, { type: "intent_rejected", ...input });
 }
 
+function isMediaSourceKind(value: unknown): value is MediaSourceKind {
+  return (
+    value === "human-microphone" ||
+    value === "sound-effect" ||
+    value === "shared-music" ||
+    value === "agent-voice" ||
+    value === "system-tone"
+  );
+}
+
 function isRtcSignalPayload(value: unknown): value is RtcSignalPayload {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -237,7 +248,6 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "rtc_call_open" ||
       parsed.type === "group_media_join" ||
       parsed.type === "group_media_leave" ||
-      parsed.type === "group_media_publish_source" ||
       parsed.type === "group_media_unpublish" ||
       parsed.type === "group_media_subscribe" ||
       parsed.type === "group_media_unsubscribe" ||
@@ -247,6 +257,16 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "sfu_produce" ||
       parsed.type === "sfu_consume" ||
       parsed.type === "sfu_consumer_resume"
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "group_media_publish_source" &&
+      isMediaSourceKind(parsed.kind) &&
+      typeof parsed.label === "string" &&
+      parsed.label.trim().length > 0 &&
+      parsed.label.length <= 160
     ) {
       return parsed as ClientMessage;
     }
