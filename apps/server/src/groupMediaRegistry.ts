@@ -29,6 +29,8 @@ type GroupMutationResult =
       code:
         | "GROUP_MEDIA_FULL"
         | "MEDIA_SOURCE_NOT_FOUND"
+        | "MEDIA_SOURCE_POLICY_DENIED"
+        | "MEDIA_SOURCE_LIMIT"
         | "MEDIA_SUBSCRIPTION_INVALID"
         | "MEDIA_SESSION_STALE";
       message: string;
