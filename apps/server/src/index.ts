@@ -236,7 +236,13 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "group_media_publish_microphone" ||
       parsed.type === "group_media_unpublish" ||
       parsed.type === "group_media_subscribe" ||
-      parsed.type === "group_media_unsubscribe"
+      parsed.type === "group_media_unsubscribe" ||
+      parsed.type === "sfu_capabilities_request" ||
+      parsed.type === "sfu_transport_create" ||
+      parsed.type === "sfu_transport_connect" ||
+      parsed.type === "sfu_produce" ||
+      parsed.type === "sfu_consume" ||
+      parsed.type === "sfu_consumer_resume"
     ) {
       return parsed as ClientMessage;
     }
@@ -433,7 +439,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-i fields."
+          message: "join_room is missing required P0-j fields."
         });
         return;
       }
