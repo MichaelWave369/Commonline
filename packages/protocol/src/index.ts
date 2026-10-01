@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-h.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-i.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type PrincipalKind = "human" | "agent" | "service" | "device";
@@ -274,6 +274,98 @@ export interface RtcCallSessionMessage {
   createdAt: string;
 }
 
+export type GroupMediaRouterMode = "mesh-p0";
+
+export interface GroupMediaParticipant {
+  participantId: string;
+  joinedAt: string;
+}
+
+export interface GroupMediaSource {
+  sourceId: string;
+  ownerParticipantId: string;
+  kind: "microphone";
+  publishedAt: string;
+}
+
+export interface GroupMediaSubscription {
+  subscriberParticipantId: string;
+  sourceId: string;
+  createdAt: string;
+}
+
+export interface GroupMediaJoinMessage {
+  type: "group_media_join";
+  requestId: string;
+  roomId: string;
+}
+
+export interface GroupMediaLeaveMessage {
+  type: "group_media_leave";
+  requestId: string;
+  roomId: string;
+}
+
+export interface GroupMediaPublishMicrophoneMessage {
+  type: "group_media_publish_microphone";
+  requestId: string;
+  roomId: string;
+}
+
+export interface GroupMediaUnpublishMessage {
+  type: "group_media_unpublish";
+  requestId: string;
+  roomId: string;
+  sourceId: string;
+}
+
+export interface GroupMediaSubscribeMessage {
+  type: "group_media_subscribe";
+  requestId: string;
+  roomId: string;
+  sourceId: string;
+}
+
+export interface GroupMediaUnsubscribeMessage {
+  type: "group_media_unsubscribe";
+  requestId: string;
+  roomId: string;
+  sourceId: string;
+}
+
+export interface GroupMediaStateMessage {
+  type: "group_media_state";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  routerMode: GroupMediaRouterMode;
+  maxParticipants: number;
+  participants: GroupMediaParticipant[];
+  sources: GroupMediaSource[];
+  subscriptions: GroupMediaSubscription[];
+}
+
+export interface GroupRtcSignalClientMessage {
+  type: "group_rtc_signal";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  targetParticipantId: string;
+  signal: RtcSignalPayload;
+}
+
+export interface GroupRtcSignalRelayMessage {
+  type: "group_rtc_signal";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  fromParticipantId: string;
+  signal: RtcSignalPayload;
+}
+
 export type RtcSignalPayload =
   | {
       kind: "offer" | "answer";
@@ -311,7 +403,14 @@ export type ClientMessage =
   | TransferAcceptAuthorityMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
-  | RtcSignalClientMessage;
+  | RtcSignalClientMessage
+  | GroupMediaJoinMessage
+  | GroupMediaLeaveMessage
+  | GroupMediaPublishMicrophoneMessage
+  | GroupMediaUnpublishMessage
+  | GroupMediaSubscribeMessage
+  | GroupMediaUnsubscribeMessage
+  | GroupRtcSignalClientMessage;
 
 export interface IdentityChallengeMessage {
   type: "identity_challenge";
@@ -405,7 +504,10 @@ export type RejectionCode =
   | "TRANSFER_TARGET_INVALID"
   | "TRANSFER_ALREADY_APPLIED"
   | "MEDIA_BUSY"
-  | "MEDIA_SESSION_STALE";
+  | "MEDIA_SESSION_STALE"
+  | "GROUP_MEDIA_FULL"
+  | "MEDIA_SOURCE_NOT_FOUND"
+  | "MEDIA_SUBSCRIPTION_INVALID";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -429,4 +531,6 @@ export type ServerMessage =
   | RtcConfigMessage
   | RtcCallSessionMessage
   | RtcSignalRelayMessage
+  | GroupMediaStateMessage
+  | GroupRtcSignalRelayMessage
   | IntentRejectedMessage;
