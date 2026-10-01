@@ -107,7 +107,7 @@ export function evaluateMediaSourcePolicy(input: {
     return {
       ok: false,
       code: "MEDIA_SOURCE_KIND_UNSUPPORTED",
-      message: `${input.kind} is reserved by P0-m policy but is not executable yet.`
+      message: `${input.kind} is reserved by P0-n policy but is not executable yet.`
     };
   }
 
