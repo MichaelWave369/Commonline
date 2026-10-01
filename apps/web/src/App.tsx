@@ -628,6 +628,31 @@ export function App() {
         </Card>
       </section>
 
+      {group.joined && Object.keys(group.remoteStreams).length > 0 && (
+        <section className="hero-grid">
+          {Object.entries(group.remoteStreams).map(([peerId, stream]) => {
+            const participant = room?.participants.find(
+              (candidate) => candidate.id === peerId
+            );
+            return (
+              <Card key={peerId}>
+                <SectionTitle>
+                  Group audio · {participant?.name ?? peerId}
+                </SectionTitle>
+                <GroupRemoteAudio
+                  stream={stream}
+                  label={
+                    group.peerStates[peerId]
+                      ? `peer ${group.peerStates[peerId]}`
+                      : "peer negotiating"
+                  }
+                />
+              </Card>
+            );
+          })}
+        </section>
+      )}
+
       <section className="hero-grid">
         <Card>
           <SectionTitle>Call path diagnostics</SectionTitle>
@@ -848,9 +873,9 @@ export function App() {
       </section>
 
       <footer>
-        P0-h makes each one-to-one call an exact ephemeral media session with a call ID,
-        generation, deterministic polite/impolite roles, perfect-negotiation glare handling,
-        and stale-signal rejection. Media sessions remain outside durable room history.
+        P0-i proves a three-human source/subscription model with an executable mesh-p0
+        adapter behind an SFU-shaped boundary. Group media stays ephemeral, agents still
+        receive no live audio, and durable undertaking state remains independent.
       </footer>
     </main>
   );
