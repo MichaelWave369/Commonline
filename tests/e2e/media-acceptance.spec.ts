@@ -123,7 +123,7 @@ async function evidence(locator: Locator) {
   };
 }
 
-test("P0-l proves live source-selective SFU routing across three browsers", async ({
+test("P0-n proves live human and governed agent voice routing across three browsers", async ({
   browser
 }, testInfo) => {
   const humans: HumanBrowser[] = [];
