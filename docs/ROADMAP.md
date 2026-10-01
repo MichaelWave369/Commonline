@@ -129,3 +129,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-r deterministic selective resumption brief from durable state + resume delta
 
 - P0-s pre-membership durable history isolation with server-enforced membership floor
+
+- P0-t two-human end-to-end experience acceptance: live media + cue + concurrent silent work + explicit acceptance + selective resumption

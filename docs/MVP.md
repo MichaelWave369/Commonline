@@ -715,3 +715,34 @@ See [HISTORY_ISOLATION_P0S.md](HISTORY_ISOLATION_P0S.md).
 ### P0-s boundary
 
 P0-s does not yet provide a way to grant a newly joined participant older event history. That capability is deliberately absent until it has its own explicit authority model.
+
+
+## P0-t — end-to-end experience proof
+
+P0-t proves the existing P0 mechanisms as one executable two-human experience chain.
+
+Implemented acceptance flow:
+
+- Alice and Bob join the same browser room
+- Alice publishes a governed microphone source
+- Bob explicitly subscribes and receives RTP
+- Alice publishes and triggers one governed participant-owned sound cue
+- Bob submits bounded silent work while Alice's microphone RTP continues
+- Vessie returns the existing room-visible comparison artifact
+- Bob can submit but cannot accept the proposal
+- Alice performs the explicit `ACCEPT_OUTCOME` transition
+- the artifact becomes durably accepted
+- Alice and Bob leave
+- Alice reconnects under the same stable identity
+- the P0-r brief shows accepted work, no unresolved work, the deterministic next action, and a missed durable event
+- compact resumption does not reconstruct speech or duplicate the artifact body
+
+CI stores a machine-readable P0-t evidence receipt plus Playwright failure artifacts.
+
+No wire/storage migration; schema remains `p0-q.1`.
+
+See [EXPERIENCE_PROOF_P0T.md](EXPERIENCE_PROOF_P0T.md).
+
+### P0-t boundary
+
+This rung proves technical composition, not human value. The roadmap's claims about useful real work and less reconstruction than a voice + notes baseline still require the planned human pilot.
