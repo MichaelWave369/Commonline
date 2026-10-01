@@ -2390,6 +2390,10 @@ wss.on("connection", (socket) => {
       session.roomId,
       session.participantId
     );
+    conversationExchanges.removeParticipant(
+      session.roomId,
+      session.participantId
+    );
 
     for (const ended of mediaSessions.endForParticipant(
       session.roomId,
