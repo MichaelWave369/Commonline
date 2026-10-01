@@ -1,5 +1,12 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-i.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-j.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+export type JsonObject = { [key: string]: JsonValue };
 
 export type PrincipalKind = "human" | "agent" | "service" | "device";
 export type PresenceState = "online" | "offline";
@@ -274,7 +281,7 @@ export interface RtcCallSessionMessage {
   createdAt: string;
 }
 
-export type GroupMediaRouterMode = "mesh-p0";
+export type GroupMediaRouterMode = "mediasoup-p0";
 
 export interface GroupMediaParticipant {
   participantId: string;
@@ -346,6 +353,129 @@ export interface GroupMediaStateMessage {
   subscriptions: GroupMediaSubscription[];
 }
 
+export type SfuTransportDirection = "send" | "recv";
+
+export interface SfuCapabilitiesRequestMessage {
+  type: "sfu_capabilities_request";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+}
+
+export interface SfuTransportCreateMessage {
+  type: "sfu_transport_create";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  direction: SfuTransportDirection;
+}
+
+export interface SfuTransportConnectMessage {
+  type: "sfu_transport_connect";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  transportId: string;
+  dtlsParameters: JsonObject;
+}
+
+export interface SfuProduceMessage {
+  type: "sfu_produce";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  transportId: string;
+  sourceId: string;
+  kind: "audio";
+  rtpParameters: JsonObject;
+  appData?: JsonObject;
+}
+
+export interface SfuConsumeMessage {
+  type: "sfu_consume";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  transportId: string;
+  sourceId: string;
+  rtpCapabilities: JsonObject;
+}
+
+export interface SfuConsumerResumeMessage {
+  type: "sfu_consumer_resume";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  consumerId: string;
+}
+
+export interface SfuCapabilitiesMessage {
+  type: "sfu_capabilities";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  routerRtpCapabilities: JsonObject;
+}
+
+export interface SfuTransportOptions {
+  id: string;
+  iceParameters: JsonObject;
+  iceCandidates: JsonObject[];
+  dtlsParameters: JsonObject;
+  sctpParameters?: JsonObject;
+}
+
+export interface SfuTransportCreatedMessage {
+  type: "sfu_transport_created";
+  requestId: string;
+  roomId: string;
+  mediaSessionId: string;
+  generation: number;
+  direction: SfuTransportDirection;
+  transport: SfuTransportOptions;
+}
+
+export interface SfuTransportConnectedMessage {
+  type: "sfu_transport_connected";
+  requestId: string;
+  roomId: string;
+  transportId: string;
+}
+
+export interface SfuProducedMessage {
+  type: "sfu_produced";
+  requestId: string;
+  roomId: string;
+  sourceId: string;
+  producerId: string;
+}
+
+export interface SfuConsumedMessage {
+  type: "sfu_consumed";
+  requestId: string;
+  roomId: string;
+  sourceId: string;
+  consumerId: string;
+  producerId: string;
+  kind: "audio";
+  rtpParameters: JsonObject;
+  producerPaused: boolean;
+}
+
+export interface SfuConsumerResumedMessage {
+  type: "sfu_consumer_resumed";
+  requestId: string;
+  roomId: string;
+  consumerId: string;
+}
+
 export interface GroupRtcSignalClientMessage {
   type: "group_rtc_signal";
   requestId: string;
@@ -410,7 +540,13 @@ export type ClientMessage =
   | GroupMediaUnpublishMessage
   | GroupMediaSubscribeMessage
   | GroupMediaUnsubscribeMessage
-  | GroupRtcSignalClientMessage;
+  | GroupRtcSignalClientMessage
+  | SfuCapabilitiesRequestMessage
+  | SfuTransportCreateMessage
+  | SfuTransportConnectMessage
+  | SfuProduceMessage
+  | SfuConsumeMessage
+  | SfuConsumerResumeMessage;
 
 export interface IdentityChallengeMessage {
   type: "identity_challenge";
@@ -507,7 +643,13 @@ export type RejectionCode =
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
   | "MEDIA_SOURCE_NOT_FOUND"
-  | "MEDIA_SUBSCRIPTION_INVALID";
+  | "MEDIA_SUBSCRIPTION_INVALID"
+  | "SFU_NOT_READY"
+  | "SFU_SESSION_STALE"
+  | "SFU_TRANSPORT_NOT_FOUND"
+  | "SFU_SOURCE_NOT_READY"
+  | "SFU_CANNOT_CONSUME"
+  | "SFU_DIRECTION_INVALID";
 
 export interface IntentRejectedMessage {
   type: "intent_rejected";
@@ -533,4 +675,10 @@ export type ServerMessage =
   | RtcSignalRelayMessage
   | GroupMediaStateMessage
   | GroupRtcSignalRelayMessage
+  | SfuCapabilitiesMessage
+  | SfuTransportCreatedMessage
+  | SfuTransportConnectedMessage
+  | SfuProducedMessage
+  | SfuConsumedMessage
+  | SfuConsumerResumedMessage
   | IntentRejectedMessage;
