@@ -39,14 +39,17 @@ class MemoryIdentityStore implements DurableIdentityStore {
 }
 
 async function keyPair() {
-  const pair = (await webcrypto.subtle.generateKey(
+  const pair = await webcrypto.subtle.generateKey(
     {
       name: "ECDSA",
       namedCurve: "P-256"
     },
     true,
     ["sign", "verify"]
-  )) as CryptoKeyPair;
+  );
+  if (!("privateKey" in pair)) {
+    throw new Error("expected an ECDSA key pair");
+  }
 
   const jwk = await webcrypto.subtle.exportKey("jwk", pair.publicKey);
   if (!jwk.x || !jwk.y) throw new Error("missing EC coordinates");
@@ -63,8 +66,10 @@ async function keyPair() {
   return { pair, publicKey };
 }
 
+type SigningKey = Parameters<typeof webcrypto.subtle.sign>[2];
+
 async function sign(
-  privateKey: CryptoKey,
+  privateKey: SigningKey,
   challenge: {
     challengeId: string;
     participantId: string;
