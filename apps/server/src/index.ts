@@ -4,6 +4,7 @@ import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AgentWorkStatusMessage,
   type ClientMessage,
+  type GroupRtcSignalRelayMessage,
   type IntentRejectedMessage,
   type RoomEventMessage,
   type RoomSnapshotMessage,
@@ -11,9 +12,10 @@ import {
   type RtcSignalRelayMessage,
   type ServerMessage
 } from "@commonline/protocol";
-import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
+import { hasCapability, SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
+import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
 import {
   isPolitePeer,
@@ -61,6 +63,7 @@ const wss = new WebSocketServer({ server: httpServer });
 const roomSockets = new Map<string, Set<WebSocket>>();
 const sessions = new SessionRegistry<WebSocket>();
 const mediaSessions = new MediaSessionRegistry();
+const groupMedia = new GroupMediaRegistry();
 
 function send(socket: WebSocket, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) {
@@ -74,6 +77,39 @@ function broadcast(roomId: string, message: ServerMessage, except?: WebSocket) {
   for (const socket of sockets) {
     if (socket !== except) send(socket, message);
   }
+}
+
+function broadcastGroupMediaState(roomId: string, requestId: string) {
+  const state = groupMedia.stateMessage({ roomId, requestId });
+  if (!state) return;
+
+  for (const participant of state.participants) {
+    const socket = sessions.current(
+      roomId,
+      participant.participantId
+    )?.connection;
+    if (socket) send(socket, state);
+  }
+}
+
+function groupMediaPermission(
+  roomId: string,
+  participantId: string,
+  capability: "SPEAK" | "RECEIVE_MEDIA"
+) {
+  const room = service.getRoom(roomId);
+  const participant = room?.participants.find(
+    (candidate) =>
+      candidate.id === participantId &&
+      candidate.kind === "human" &&
+      candidate.presence === "online"
+  );
+
+  return Boolean(
+    room &&
+      participant &&
+      hasCapability(room, participantId, capability)
+  );
 }
 
 function broadcastStatus(input: {
@@ -138,7 +174,13 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "accept_outcome" ||
       parsed.type === "transfer_accept_authority" ||
       parsed.type === "rtc_config_request" ||
-      parsed.type === "rtc_call_open"
+      parsed.type === "rtc_call_open" ||
+      parsed.type === "group_media_join" ||
+      parsed.type === "group_media_leave" ||
+      parsed.type === "group_media_publish_microphone" ||
+      parsed.type === "group_media_unpublish" ||
+      parsed.type === "group_media_subscribe" ||
+      parsed.type === "group_media_unsubscribe"
     ) {
       return parsed as ClientMessage;
     }
@@ -149,6 +191,19 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.targetParticipantId.length > 0 &&
       typeof parsed.callId === "string" &&
       parsed.callId.length > 0 &&
+      Number.isInteger(parsed.generation) &&
+      Number(parsed.generation) > 0 &&
+      isRtcSignalPayload(parsed.signal)
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "group_rtc_signal" &&
+      typeof parsed.targetParticipantId === "string" &&
+      parsed.targetParticipantId.length > 0 &&
+      typeof parsed.mediaSessionId === "string" &&
+      parsed.mediaSessionId.length > 0 &&
       Number.isInteger(parsed.generation) &&
       Number(parsed.generation) > 0 &&
       isRtcSignalPayload(parsed.signal)
