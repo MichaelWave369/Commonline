@@ -4,16 +4,16 @@ import {
   agentVoiceProfiles
 } from "./agentVoicePolicy";
 
-describe("P0-m agent voice profile catalog", () => {
+describe("P0-n agent voice profile catalog", () => {
   it("binds the local voice id to Vessie", () => {
     expect(
       agentVoiceProfile("agent-vessie", "vessie-local-v1")?.label
     ).toBe("Vessie local voice");
   });
 
-  it("does not claim the renderer is wired in the authority rung", () => {
+  it("binds the voice identity to the local renderer adapter", () => {
     const profile = agentVoiceProfiles()[0];
-    expect(profile.rendererState).toBe("not-wired");
+    expect(profile.rendererState).toBe("local-adapter");
     expect(profile.engineBoundary).toBe("local-tts-adapter");
   });
 
