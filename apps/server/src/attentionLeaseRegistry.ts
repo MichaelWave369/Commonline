@@ -1,7 +1,4 @@
-import type {
-  AttentionLease,
-  AttentionLeaseState
-} from "@commonline/protocol";
+import type { AttentionLease } from "@commonline/protocol";
 
 const DEFAULT_TTL_MS = 120_000;
 
