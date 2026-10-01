@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MockSilentAgent } from "@commonline/agent-runtime";
-import {
-  createRoom,
-  joinParticipant,
-  SILENT_AGENT_PARTICIPANT_ID
-} from "@commonline/room-core";
+import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { DeterministicSpeechRecognizer } from "./localSpeechRecognizer";
 import { ListeningShareRegistry } from "./listeningShareRegistry";
 import { ListeningShareRuntime } from "./listeningShareRuntime";
-import { InMemoryRoomStore } from "./roomStore";
+import { SQLiteRoomStore } from "./sqliteRoomStore";
 import { RoomService } from "./roomService";
 
 function pcmBase64(sampleCount: number) {
@@ -22,7 +18,7 @@ function pcmBase64(sampleCount: number) {
 
 describe("P0-p listening share runtime", () => {
   it("delivers one explicitly shared clip to Vessie as ephemeral selected context", async () => {
-    const store = new InMemoryRoomStore();
+    const store = new SQLiteRoomStore(":memory:");
     const service = new RoomService("listen proof", store);
     service.join({
       roomId: "room",
@@ -67,10 +63,11 @@ describe("P0-p listening share runtime", () => {
     expect(result.observedWordCount).toBeGreaterThan(0);
     expect(states).toEqual(["received", "transcribing", "delivered"]);
     expect(leases.get(lease.leaseId)?.state).toBe("consumed");
+    store.close();
   });
 
   it("refuses replay of a consumed listening share lease", async () => {
-    const store = new InMemoryRoomStore();
+    const store = new SQLiteRoomStore(":memory:");
     const service = new RoomService("listen proof", store);
     service.join({
       roomId: "room",
@@ -113,5 +110,6 @@ describe("P0-p listening share runtime", () => {
     await expect(
       runtime.submit({ ...input, shareId: "share-replay" })
     ).rejects.toThrow("LISTENING_LEASE_CONSUMED");
+    store.close();
   });
 });
