@@ -196,7 +196,10 @@ export class IdentityService {
       verified = verify(
         "sha256",
         Buffer.from(proofPayload(challenge), "utf8"),
-        keyObject,
+        {
+          key: keyObject,
+          dsaEncoding: "ieee-p1363"
+        },
         signature
       );
     } catch {
