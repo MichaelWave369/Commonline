@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockSilentAgent } from "@commonline/agent-runtime";
 import { SILENT_AGENT_PARTICIPANT_ID } from "@commonline/room-core";
+import { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { DeterministicSpeechRecognizer } from "./localSpeechRecognizer";
 import { ListeningShareRegistry } from "./listeningShareRegistry";
@@ -42,6 +43,7 @@ describe("P0-p listening share runtime", () => {
       service,
       group,
       leases,
+      new ConversationExchangeRegistry(),
       new DeterministicSpeechRecognizer(),
       new MockSilentAgent("Vessie")
     );
@@ -61,6 +63,8 @@ describe("P0-p listening share runtime", () => {
 
     expect(result.transcript).toContain("3200 PCM16 samples");
     expect(result.observedWordCount).toBeGreaterThan(0);
+    expect(result.exchange.state).toBe("heard");
+    expect(result.exchange.listeningShareId).toBe("share-1");
     expect(states).toEqual(["received", "transcribing", "delivered"]);
     expect(leases.get(lease.leaseId)?.state).toBe("consumed");
     store.close();
@@ -90,6 +94,7 @@ describe("P0-p listening share runtime", () => {
       service,
       group,
       leases,
+      new ConversationExchangeRegistry(),
       new DeterministicSpeechRecognizer(),
       new MockSilentAgent("Vessie")
     );
