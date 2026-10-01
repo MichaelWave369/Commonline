@@ -257,7 +257,11 @@ export function App() {
           </select>
           <div className="button-row">
             {connection === "disconnected" ? (
-              <Button onClick={connect} disabled={!name.trim()}>
+              <Button
+                data-testid="authenticate-join"
+                onClick={connect}
+                disabled={!name.trim()}
+              >
                 Authenticate + join
               </Button>
             ) : (
