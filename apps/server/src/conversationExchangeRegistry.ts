@@ -61,7 +61,8 @@ export class ConversationExchangeRegistry {
         exchange.roomId === input.roomId &&
         exchange.humanParticipantId === input.humanParticipantId &&
         exchange.agentParticipantId === input.agentParticipantId &&
-        exchange.state === "heard"
+        exchange.state === "heard" &&
+        !exchange.responseInFlight
       ) {
         exchange.state = "expired";
         exchange.responseInFlight = false;
@@ -177,7 +178,8 @@ export class ConversationExchangeRegistry {
     if (!record) return undefined;
 
     record.responseInFlight = false;
-    return view(record);
+    const resolved = this.resolveState(exchangeId);
+    return resolved ? view(resolved) : undefined;
   }
 
   get(exchangeId: string) {
@@ -210,6 +212,7 @@ export class ConversationExchangeRegistry {
 
     if (
       record.state === "heard" &&
+      !record.responseInFlight &&
       Date.parse(record.expiresAt) <= Date.now()
     ) {
       record.state = "expired";
