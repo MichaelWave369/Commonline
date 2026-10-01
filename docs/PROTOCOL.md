@@ -394,3 +394,16 @@ The first lease mode is `one-turn`. A lease is scoped to one room, one target ag
 Successful lease state changes are returned through `attention_lease_state`. Directed turn progress uses the content-free `agent_turn_status` message with thinking, rendering, speaking, completed, or failed state.
 
 P0-o does not add prompts or responses to room history. Voice authority and listener subscriptions remain separate requirements.
+
+
+## P0-p bounded listening profile
+
+Wire schema: `p0-p.1`.
+
+P0-p adds `grant_listening_share`, `revoke_listening_share`, and `submit_listening_share`.
+
+A listening-share lease is ephemeral, human-owned, target-agent-specific, expires, and may be consumed once. Submitted audio must be mono 16 kHz PCM16 and may contain at most five seconds of samples.
+
+The server emits content-free `listening_share_status` messages to the room and returns `listening_share_result`, including transcript text, only to the submitting human.
+
+The listening path is selected-context delivery, not a group-media subscription. The target agent must hold `READ_SELECTED_CONTEXT`; it receives no SFU microphone Consumer.
