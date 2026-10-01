@@ -317,3 +317,23 @@ Authenticated SFU requests cover router capabilities, send/receive transport cre
 Producer creation requires active SPEAK plus ownership of the published source. Consumer creation requires active RECEIVE_MEDIA plus an explicit directed subscription to the requested source.
 
 Legacy group_rtc_signal is rejected in P0-j. Multiparty audio must traverse the governed SFU. SFU request/response traffic remains ephemeral and never increments room version.
+
+## P0-k media source policy profile
+
+Wire schema: `p0-k.1`.
+
+`group_media_publish_microphone` is replaced by the generic:
+
+```text
+group_media_publish_source
+  kind
+  label
+```
+
+Group media state now includes `sourcePolicies[]` and each source binds `kind + label + policyId`.
+
+Executable P0-k kinds are `human-microphone` and `sound-effect`. `shared-music`, `agent-voice`, and `system-tone` are declared but reserved.
+
+All source policies currently require SPEAK, use explicit subscriptions, remain ephemeral, and default recording to not-authorized. Principal-kind restrictions still apply independently of SPEAK.
+
+SFU Producer creation revalidates the current source policy and policy ID. Consumer creation remains bound to RECEIVE_MEDIA plus the exact source subscription.

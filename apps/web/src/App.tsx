@@ -66,7 +66,7 @@ export function App() {
     sendRtcSignal,
     joinGroupMedia,
     leaveGroupMedia,
-    publishGroupMicrophone,
+    publishGroupSource,
     unpublishGroupSource,
     subscribeGroupSource,
     unsubscribeGroupSource,
@@ -93,7 +93,7 @@ export function App() {
     requestSfu,
     joinGroup: joinGroupMedia,
     leaveGroup: leaveGroupMedia,
-    publishMicrophone: publishGroupMicrophone,
+    publishSource: publishGroupSource,
     unpublishSource: unpublishGroupSource,
     subscribeSource: subscribeGroupSource,
     unsubscribeSource: unsubscribeGroupSource
@@ -208,8 +208,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-j GOVERNED MEDIASOUP SFU</div>
-          <h1>{room?.purpose ?? "Enforce identified source subscriptions at the media router"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-k GOVERNED MEDIA SOURCE POLICY</div>
+          <h1>{room?.purpose ?? "Govern what kind of audio source may exist before the SFU routes it"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -512,9 +512,9 @@ export function App() {
           {!group.joined ? (
             <>
               <p className="muted">
-                P0-j routes up to three human microphone sources through a real
-                mediasoup SFU. Commonline still owns membership, grants, source
-                identity, and subscriptions; mediasoup only forwards authorized media.
+                P0-k keeps the mediasoup SFU but adds a policy catalog above it.
+                Microphones and sound effects are executable source kinds; music,
+                agent voice, and system tones are visible but reserved for later rungs.
               </p>
               <Button
                 onClick={group.join}
@@ -538,7 +538,10 @@ export function App() {
                   ROUTER {group.routerMode?.toUpperCase() ?? "UNKNOWN"}
                 </Badge>
                 <Badge>
-                  MIC {group.ownSource ? (group.muted ? "MUTED" : "PUBLISHED") : "OFF"}
+                  MIC {group.microphoneSource ? (group.muted ? "MUTED" : "PUBLISHED") : "OFF"}
+                </Badge>
+                <Badge>
+                  FX {group.soundEffectSource ? (group.soundEffectReady ? "READY" : "STARTING") : "OFF"}
                 </Badge>
                 <Badge>SFU {group.sfuReady ? "READY" : "LOADING"}</Badge>
                 <Badge>SEND {group.sendState.toUpperCase()}</Badge>
@@ -547,7 +550,7 @@ export function App() {
               </div>
 
               <div className="button-row">
-                {!group.ownSource ? (
+                {!group.microphoneSource ? (
                   <Button
                     onClick={() => void group.enableMicrophone()}
                     disabled={!canSpeak || !group.sfuReady}
@@ -564,13 +567,36 @@ export function App() {
                     </Button>
                   </>
                 )}
+
+                {!group.soundEffectSource ? (
+                  <Button
+                    onClick={() => void group.enableSoundEffects()}
+                    disabled={!canSpeak || !group.sfuReady}
+                  >
+                    Publish sound FX
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      onClick={() => void group.triggerSoundEffect()}
+                      disabled={!group.soundEffectReady}
+                    >
+                      Trigger governed cue
+                    </Button>
+                    <Button onClick={group.disableSoundEffects}>
+                      Stop sound FX
+                    </Button>
+                  </>
+                )}
+
                 <Button onClick={group.leave}>Leave group media</Button>
               </div>
 
               {group.error && <p className="notice">{group.error}</p>}
               <p className="muted small">
-                Joining does not publish a microphone and does not subscribe you
-                to anyone. Those remain separate explicit actions.
+                Joining publishes nothing. Each source kind is separately registered,
+                policy-checked, produced, and subscribed. The demo cue is generated
+                locally with Web Audio and travels through the same governed SFU path.
               </p>
             </>
           )}
@@ -581,7 +607,7 @@ export function App() {
           {!group.joined || !groupMediaState ? (
             <p className="muted">Join group media to see ephemeral sources.</p>
           ) : groupMediaState.sources.length === 0 ? (
-            <p className="muted">No microphone sources are published yet.</p>
+            <p className="muted">No governed media sources are published yet.</p>
           ) : (
             <div className="participant-list">
               {groupMediaState.sources.map((source) => {
@@ -599,11 +625,15 @@ export function App() {
                   <div className="call-peer" key={source.sourceId}>
                     <div>
                       <strong>
-                        {owner?.name ?? source.ownerParticipantId}
-                        {mine ? " (your mic)" : ""}
+                        {source.label}
+                        {mine ? " (yours)" : ""}
                       </strong>
                       <div className="muted small">
-                        {source.kind} · {source.sourceId}
+                        {owner?.name ?? source.ownerParticipantId} · {source.kind}
+                        <br />
+                        policy {source.policyId}
+                        <br />
+                        {source.sourceId}
                       </div>
                     </div>
                     {!mine && (
@@ -625,6 +655,51 @@ export function App() {
           )}
         </Card>
       </section>
+
+      {group.joined && group.sourcePolicies.length > 0 && (
+        <section className="hero-grid">
+          <Card>
+            <SectionTitle>Media source policy catalog</SectionTitle>
+            <div className="participant-list">
+              {group.sourcePolicies.map((policy) => (
+                <div className="call-peer" key={policy.policyId}>
+                  <div>
+                    <strong>{policy.kind}</strong>
+                    <div className="muted small">
+                      {policy.executionState} · requires {policy.requiredCapability}
+                      <br />
+                      publishers: {policy.allowedPublisherKinds.join(", ")}
+                      <br />
+                      audience: {policy.audienceMode} · retention: {policy.retention}
+                      <br />
+                      recording default: {policy.recordingDefault}
+                    </div>
+                  </div>
+                  <Badge>{policy.executionState.toUpperCase()}</Badge>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionTitle>Source law</SectionTitle>
+            <div className="delta">
+              <strong>Presence is not a source.</strong>
+              <p className="muted small">
+                Joining group media creates no microphone, effect, music bed,
+                agent voice, or system tone.
+              </p>
+            </div>
+            <div className="delta">
+              <strong>SPEAK is necessary, not sufficient.</strong>
+              <p className="muted small">
+                The source policy also checks principal kind, executable state,
+                per-publisher limits, and explicit downstream subscriptions.
+              </p>
+            </div>
+          </Card>
+        </section>
+      )}
 
       {group.joined && Object.keys(group.remoteStreams).length > 0 && (
         <section className="hero-grid">
@@ -871,10 +946,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-j replaces the cooperative group mesh with a real mediasoup SFU. The server
-        creates producers only for SPEAK-authorized published sources and consumers only
-        for RECEIVE_MEDIA-authorized explicit subscriptions. Agents still receive no live
-        audio and SFU state remains ephemeral.
+        P0-k adds an explicit media-source policy layer above the SFU. Human microphones
+        and sound effects are executable; shared music, agent voice, and system tones are
+        reserved. Every routed source still requires explicit publication and subscription,
+        and all live media state remains ephemeral.
       </footer>
     </main>
   );

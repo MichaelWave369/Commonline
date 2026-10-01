@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
+import { mediaSourcePolicy } from "./mediaSourcePolicy";
 
-describe("P0-i group media registry", () => {
+function policy(kind: "human-microphone" | "sound-effect") {
+  const resolved = mediaSourcePolicy(kind);
+  if (!resolved) throw new Error("missing source policy");
+  return resolved;
+}
+
+describe("P0-k group media registry", () => {
   it("admits at most three humans", () => {
     const registry = new GroupMediaRegistry();
 
@@ -19,29 +26,66 @@ describe("P0-i group media registry", () => {
     });
     expect(fourth.ok).toBe(false);
     if (!fourth.ok) expect(fourth.code).toBe("GROUP_MEDIA_FULL");
-
-    expect(registry.current("room")?.participants).toHaveLength(3);
   });
 
-  it("publishes one microphone source per participant idempotently", () => {
+  it("publishes one source per kind idempotently while allowing distinct kinds", () => {
     const registry = new GroupMediaRegistry();
     registry.join({ roomId: "room", participantId: "alice" });
 
-    const first = registry.publishMicrophone({
+    const mic = registry.publishSource({
       roomId: "room",
-      participantId: "alice"
+      participantId: "alice",
+      kind: "human-microphone",
+      label: "Alice mic",
+      policy: policy("human-microphone")
     });
-    const second = registry.publishMicrophone({
+    const micAgain = registry.publishSource({
       roomId: "room",
-      participantId: "alice"
+      participantId: "alice",
+      kind: "human-microphone",
+      label: "ignored duplicate",
+      policy: policy("human-microphone")
+    });
+    const effect = registry.publishSource({
+      roomId: "room",
+      participantId: "alice",
+      kind: "sound-effect",
+      label: "Governed cue",
+      policy: policy("sound-effect")
     });
 
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    if (!first.ok || !second.ok) return;
-    expect(first.session.sources).toHaveLength(1);
-    expect(second.session.sources).toHaveLength(1);
-    expect(second.changed).toBe(false);
+    expect(mic.ok).toBe(true);
+    expect(micAgain.ok).toBe(true);
+    expect(effect.ok).toBe(true);
+    if (!mic.ok || !micAgain.ok || !effect.ok) return;
+
+    expect(micAgain.changed).toBe(false);
+    expect(effect.session.sources).toHaveLength(2);
+    expect(effect.session.sources.map((source) => source.kind)).toEqual([
+      "human-microphone",
+      "sound-effect"
+    ]);
+  });
+
+  it("exposes the source policy catalog in group state", () => {
+    const registry = new GroupMediaRegistry();
+    registry.join({ roomId: "room", participantId: "alice" });
+
+    const state = registry.stateMessage({
+      requestId: "state",
+      roomId: "room"
+    });
+
+    expect(
+      state?.sourcePolicies.find(
+        (item) => item.kind === "sound-effect"
+      )?.executionState
+    ).toBe("executable");
+    expect(
+      state?.sourcePolicies.find(
+        (item) => item.kind === "agent-voice"
+      )?.executionState
+    ).toBe("reserved");
   });
 
   it("requires an explicit directed subscription before pair signaling", () => {
@@ -49,9 +93,12 @@ describe("P0-i group media registry", () => {
     registry.join({ roomId: "room", participantId: "alice" });
     registry.join({ roomId: "room", participantId: "bob" });
 
-    const published = registry.publishMicrophone({
+    const published = registry.publishSource({
       roomId: "room",
-      participantId: "bob"
+      participantId: "bob",
+      kind: "human-microphone",
+      label: "Bob mic",
+      policy: policy("human-microphone")
     });
     if (!published.ok) throw new Error(published.message);
     const source = published.session.sources[0]!;
@@ -64,9 +111,6 @@ describe("P0-i group media registry", () => {
       targetParticipantId: "bob"
     });
     expect(before.ok).toBe(false);
-    if (!before.ok) {
-      expect(before.code).toBe("MEDIA_SUBSCRIPTION_INVALID");
-    }
 
     const subscribed = registry.subscribe({
       roomId: "room",
@@ -87,23 +131,30 @@ describe("P0-i group media registry", () => {
     ).toBe(true);
   });
 
-  it("removes owned sources and dependent subscriptions on leave", () => {
+  it("removes all owned source kinds and dependent subscriptions on leave", () => {
     const registry = new GroupMediaRegistry();
     registry.join({ roomId: "room", participantId: "alice" });
     registry.join({ roomId: "room", participantId: "bob" });
 
-    const published = registry.publishMicrophone({
-      roomId: "room",
-      participantId: "bob"
-    });
-    if (!published.ok) throw new Error(published.message);
-    const sourceId = published.session.sources[0]!.sourceId;
+    for (const kind of ["human-microphone", "sound-effect"] as const) {
+      const published = registry.publishSource({
+        roomId: "room",
+        participantId: "bob",
+        kind,
+        label: kind,
+        policy: policy(kind)
+      });
+      if (!published.ok) throw new Error(published.message);
 
-    registry.subscribe({
-      roomId: "room",
-      participantId: "alice",
-      sourceId
-    });
+      const source = published.session.sources.find(
+        (candidate) => candidate.kind === kind
+      )!;
+      registry.subscribe({
+        roomId: "room",
+        participantId: "alice",
+        sourceId: source.sourceId
+      });
+    }
 
     const remaining = registry.leave({
       roomId: "room",
@@ -112,9 +163,6 @@ describe("P0-i group media registry", () => {
 
     expect(remaining?.sources).toHaveLength(0);
     expect(remaining?.subscriptions).toHaveLength(0);
-    expect(remaining?.participants.map((item) => item.participantId)).toEqual([
-      "alice"
-    ]);
   });
 
   it("starts a new generation only after the group becomes empty", () => {

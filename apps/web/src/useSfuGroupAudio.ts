@@ -7,8 +7,10 @@ import {
 } from "react";
 import { Device } from "mediasoup-client";
 import type {
+  GroupMediaSource,
   GroupMediaStateMessage,
   JsonObject,
+  MediaSourceKind,
   SfuCapabilitiesRequestMessage,
   SfuConsumeMessage,
   SfuConsumerResumeMessage,
@@ -39,7 +41,7 @@ interface UseSfuGroupAudioInput {
   ) => Promise<SfuServerResponse>;
   joinGroup: () => boolean;
   leaveGroup: () => boolean;
-  publishMicrophone: () => boolean;
+  publishSource: (kind: MediaSourceKind, label: string) => boolean;
   unpublishSource: (sourceId: string) => boolean;
   subscribeSource: (sourceId: string) => boolean;
   unsubscribeSource: (sourceId: string) => boolean;
@@ -58,7 +60,7 @@ export function useSfuGroupAudio({
   requestSfu,
   joinGroup,
   leaveGroup,
-  publishMicrophone,
+  publishSource,
   unpublishSource,
   subscribeSource,
   unsubscribeSource
@@ -73,16 +75,17 @@ export function useSfuGroupAudio({
   const recvTransportRef = useRef<RecvTransport | null>(null);
   const recvTransportPromiseRef =
     useRef<Promise<RecvTransport> | null>(null);
-  const producerRef = useRef<{
-    sourceId: string;
-    producer: ClientProducer;
-  } | null>(null);
-  const producerCreatingRef = useRef<string | null>(null);
-  const consumersRef = useRef(
-    new Map<string, ClientConsumer>()
-  );
+  const producersRef = useRef(new Map<string, ClientProducer>());
+  const producerCreatingRef = useRef(new Set<string>());
+  const consumersRef = useRef(new Map<string, ClientConsumer>());
   const consumerCreatingRef = useRef(new Set<string>());
-  const localStreamRef = useRef<MediaStream | null>(null);
+  const localTracksRef = useRef(
+    new Map<MediaSourceKind, MediaStreamTrack>()
+  );
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const cueContextRef = useRef<AudioContext | null>(null);
+  const cueDestinationRef =
+    useRef<MediaStreamAudioDestinationNode | null>(null);
 
   const [remoteStreams, setRemoteStreams] = useState<
     Record<string, MediaStream>
@@ -92,6 +95,7 @@ export function useSfuGroupAudio({
   const [sendState, setSendState] = useState("closed");
   const [recvState, setRecvState] = useState("closed");
   const [sfuReady, setSfuReady] = useState(false);
+  const [producingSourceIds, setProducingSourceIds] = useState<string[]>([]);
 
   stateRef.current = groupState;
 
@@ -102,13 +106,20 @@ export function useSfuGroupAudio({
     )
   );
 
-  const ownSource = useMemo(
+  const ownSources = useMemo(
     () =>
-      groupState?.sources.find(
+      groupState?.sources.filter(
         (source) =>
           source.ownerParticipantId === participantId
-      ),
+      ) ?? [],
     [groupState, participantId]
+  );
+
+  const microphoneSource = ownSources.find(
+    (source) => source.kind === "human-microphone"
+  );
+  const soundEffectSource = ownSources.find(
+    (source) => source.kind === "sound-effect"
   );
 
   const desiredSubscriptions = useMemo(
@@ -123,6 +134,18 @@ export function useSfuGroupAudio({
           .map((subscription) => subscription.sourceId) ?? []
       ),
     [groupState, participantId]
+  );
+
+  const setProducing = useCallback(
+    (sourceId: string, producing: boolean) => {
+      setProducingSourceIds((current) => {
+        const next = new Set(current);
+        if (producing) next.add(sourceId);
+        else next.delete(sourceId);
+        return [...next];
+      });
+    },
+    []
   );
 
   const closeConsumer = useCallback((sourceId: string) => {
@@ -140,23 +163,50 @@ export function useSfuGroupAudio({
     });
   }, []);
 
-  const closeProducer = useCallback(() => {
-    producerRef.current?.producer.close();
-    producerRef.current = null;
-    producerCreatingRef.current = null;
-  }, []);
+  const closeProducer = useCallback(
+    (sourceId: string) => {
+      const producer = producersRef.current.get(sourceId);
+      if (producer) {
+        producer.close();
+        producersRef.current.delete(sourceId);
+      }
+      producerCreatingRef.current.delete(sourceId);
+      setProducing(sourceId, false);
+    },
+    [setProducing]
+  );
 
-  const stopLocalMedia = useCallback(() => {
-    localStreamRef.current
+  const closeAllProducers = useCallback(() => {
+    for (const sourceId of [...producersRef.current.keys()]) {
+      closeProducer(sourceId);
+    }
+  }, [closeProducer]);
+
+  const stopMicrophone = useCallback(() => {
+    microphoneStreamRef.current
       ?.getTracks()
       .forEach((track) => track.stop());
-    localStreamRef.current = null;
+    microphoneStreamRef.current = null;
+    localTracksRef.current.delete("human-microphone");
     setMuted(false);
   }, []);
 
+  const stopSoundEffectBus = useCallback(() => {
+    const track = localTracksRef.current.get("sound-effect");
+    track?.stop();
+    localTracksRef.current.delete("sound-effect");
+    cueDestinationRef.current = null;
+
+    const context = cueContextRef.current;
+    cueContextRef.current = null;
+    if (context && context.state !== "closed") {
+      void context.close();
+    }
+  }, []);
+
   const closeSfu = useCallback(
-    (stopMicrophone: boolean) => {
-      closeProducer();
+    (stopLocalSources: boolean) => {
+      closeAllProducers();
 
       for (const sourceId of [
         ...consumersRef.current.keys()
@@ -178,11 +228,17 @@ export function useSfuGroupAudio({
       setSendState("closed");
       setRecvState("closed");
 
-      if (stopMicrophone) {
-        stopLocalMedia();
+      if (stopLocalSources) {
+        stopMicrophone();
+        stopSoundEffectBus();
       }
     },
-    [closeConsumer, closeProducer, stopLocalMedia]
+    [
+      closeAllProducers,
+      closeConsumer,
+      stopMicrophone,
+      stopSoundEffectBus
+    ]
   );
 
   const assertCurrentSession = useCallback(() => {
@@ -518,60 +574,66 @@ export function useSfuGroupAudio({
   ]);
 
   const ensureProducer = useCallback(
-    async (sourceId: string) => {
+    async (source: GroupMediaSource) => {
       if (
-        producerRef.current?.sourceId === sourceId ||
-        producerCreatingRef.current === sourceId
+        producersRef.current.has(source.sourceId) ||
+        producerCreatingRef.current.has(source.sourceId)
       ) {
         return;
       }
 
-      const stream = localStreamRef.current;
-      const track = stream?.getAudioTracks()[0];
-      if (!stream || !track || track.readyState === "ended") {
+      const track = localTracksRef.current.get(source.kind);
+      if (!track || track.readyState === "ended") {
         return;
       }
 
-      producerCreatingRef.current = sourceId;
+      producerCreatingRef.current.add(source.sourceId);
 
       try {
         const transport = await ensureSendTransport();
-        closeProducer();
-
         const producer = await transport.produce({
           track,
           stopTracks: false,
-          appData: { sourceId }
+          appData: {
+            sourceId: source.sourceId,
+            sourceKind: source.kind,
+            policyId: source.policyId
+          }
         });
 
         producer.on("transportclose", () => {
-          if (producerRef.current?.producer === producer) {
-            producerRef.current = null;
+          if (producersRef.current.get(source.sourceId) === producer) {
+            producersRef.current.delete(source.sourceId);
+            setProducing(source.sourceId, false);
           }
-        });
-        producer.on("trackended", () => {
-          const current = stateRef.current;
-          const source = current?.sources.find(
-            (candidate) =>
-              candidate.sourceId === sourceId
-          );
-          if (source) {
-            unpublishSource(sourceId);
-          }
-          producerRef.current = null;
-          stopLocalMedia();
         });
 
-        producerRef.current = { sourceId, producer };
+        producer.on("trackended", () => {
+          if (producersRef.current.get(source.sourceId) === producer) {
+            producersRef.current.delete(source.sourceId);
+            setProducing(source.sourceId, false);
+          }
+          unpublishSource(source.sourceId);
+
+          if (source.kind === "human-microphone") {
+            stopMicrophone();
+          } else if (source.kind === "sound-effect") {
+            stopSoundEffectBus();
+          }
+        });
+
+        producersRef.current.set(source.sourceId, producer);
+        setProducing(source.sourceId, true);
         setError(null);
       } finally {
-        producerCreatingRef.current = null;
+        producerCreatingRef.current.delete(source.sourceId);
       }
     },
     [
-      closeProducer,
       ensureSendTransport,
-      stopLocalMedia,
+      setProducing,
+      stopMicrophone,
+      stopSoundEffectBus,
       unpublishSource
     ]
   );
@@ -676,9 +738,6 @@ export function useSfuGroupAudio({
             ? cause.message
             : String(cause);
 
-        // A subscription may arrive a few milliseconds before the owner has
-        // completed transport.produce(). The server broadcasts group state
-        // again after the producer is live, which gives this effect a retry.
         if (!message.includes("SFU_SOURCE_NOT_READY")) {
           setError(message);
         }
@@ -728,24 +787,32 @@ export function useSfuGroupAudio({
   ]);
 
   useEffect(() => {
-    if (!joined || !ownSource) {
-      closeProducer();
-      return;
+    const activeOwnIds = new Set(
+      ownSources.map((source) => source.sourceId)
+    );
+
+    for (const sourceId of [...producersRef.current.keys()]) {
+      if (!activeOwnIds.has(sourceId)) {
+        closeProducer(sourceId);
+      }
     }
 
-    void ensureProducer(ownSource.sourceId).catch((cause) => {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not publish the governed microphone source."
-      );
-    });
+    if (!joined) return;
+
+    for (const source of ownSources) {
+      void ensureProducer(source).catch((cause) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : `Could not publish ${source.kind} to the SFU.`
+        );
+      });
+    }
   }, [
     closeProducer,
     ensureProducer,
-    groupState,
     joined,
-    ownSource
+    ownSources
   ]);
 
   useEffect(() => {
@@ -823,8 +890,8 @@ export function useSfuGroupAudio({
     try {
       await ensureDevice();
 
-      if (!localStreamRef.current) {
-        localStreamRef.current =
+      if (!microphoneStreamRef.current) {
+        microphoneStreamRef.current =
           await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
@@ -835,10 +902,22 @@ export function useSfuGroupAudio({
           });
       }
 
-      if (!publishMicrophone()) {
-        stopLocalMedia();
+      const track =
+        microphoneStreamRef.current.getAudioTracks()[0];
+      if (!track) {
+        throw new Error("Browser returned no microphone track.");
+      }
+      localTracksRef.current.set("human-microphone", track);
+
+      if (
+        !publishSource(
+          "human-microphone",
+          "Human microphone"
+        )
+      ) {
+        stopMicrophone();
         setError(
-          "Could not publish the microphone source."
+          "Could not register the governed microphone source."
         );
         return false;
       }
@@ -846,7 +925,7 @@ export function useSfuGroupAudio({
       setError(null);
       return true;
     } catch (cause) {
-      stopLocalMedia();
+      stopMicrophone();
       setError(
         cause instanceof Error
           ? cause.message
@@ -857,25 +936,25 @@ export function useSfuGroupAudio({
   }, [
     ensureDevice,
     joined,
-    publishMicrophone,
-    stopLocalMedia
+    publishSource,
+    stopMicrophone
   ]);
 
   const disableMicrophone = useCallback(() => {
-    if (ownSource) {
-      unpublishSource(ownSource.sourceId);
+    if (microphoneSource) {
+      unpublishSource(microphoneSource.sourceId);
+      closeProducer(microphoneSource.sourceId);
     }
-    closeProducer();
-    stopLocalMedia();
+    stopMicrophone();
   }, [
     closeProducer,
-    ownSource,
-    stopLocalMedia,
+    microphoneSource,
+    stopMicrophone,
     unpublishSource
   ]);
 
   const toggleMute = useCallback(() => {
-    const stream = localStreamRef.current;
+    const stream = microphoneStreamRef.current;
     if (!stream) return;
 
     const nextMuted = !muted;
@@ -885,23 +964,164 @@ export function useSfuGroupAudio({
     setMuted(nextMuted);
   }, [muted]);
 
+  const enableSoundEffects = useCallback(async () => {
+    if (!joined) {
+      setError(
+        "Join group media before publishing a sound-effect source."
+      );
+      return false;
+    }
+
+    try {
+      await ensureDevice();
+
+      if (!cueContextRef.current || !cueDestinationRef.current) {
+        const context = new AudioContext();
+        const destination = context.createMediaStreamDestination();
+        await context.resume();
+
+        const track = destination.stream.getAudioTracks()[0];
+        if (!track) {
+          await context.close();
+          throw new Error(
+            "Browser could not create the sound-effect media track."
+          );
+        }
+
+        cueContextRef.current = context;
+        cueDestinationRef.current = destination;
+        localTracksRef.current.set("sound-effect", track);
+      }
+
+      if (
+        !publishSource(
+          "sound-effect",
+          "Governed sound effects"
+        )
+      ) {
+        stopSoundEffectBus();
+        setError(
+          "Could not register the governed sound-effect source."
+        );
+        return false;
+      }
+
+      setError(null);
+      return true;
+    } catch (cause) {
+      stopSoundEffectBus();
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not create the sound-effect source."
+      );
+      return false;
+    }
+  }, [
+    ensureDevice,
+    joined,
+    publishSource,
+    stopSoundEffectBus
+  ]);
+
+  const disableSoundEffects = useCallback(() => {
+    if (soundEffectSource) {
+      unpublishSource(soundEffectSource.sourceId);
+      closeProducer(soundEffectSource.sourceId);
+    }
+    stopSoundEffectBus();
+  }, [
+    closeProducer,
+    soundEffectSource,
+    stopSoundEffectBus,
+    unpublishSource
+  ]);
+
+  const triggerSoundEffect = useCallback(async () => {
+    const context = cueContextRef.current;
+    const destination = cueDestinationRef.current;
+
+    if (
+      !context ||
+      !destination ||
+      !soundEffectSource ||
+      !producingSourceIds.includes(soundEffectSource.sourceId)
+    ) {
+      setError(
+        "Publish the governed sound-effect source and wait for its SFU Producer first."
+      );
+      return;
+    }
+
+    await context.resume();
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const filter = context.createBiquadFilter();
+    const now = context.currentTime;
+
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(118, now);
+    oscillator.frequency.exponentialRampToValueAtTime(
+      52,
+      now + 0.42
+    );
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(460, now);
+    filter.Q.setValueAtTime(0.7, now);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.28, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + 0.46
+    );
+
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(destination);
+
+    oscillator.start(now);
+    oscillator.stop(now + 0.48);
+    oscillator.addEventListener("ended", () => {
+      oscillator.disconnect();
+      filter.disconnect();
+      gain.disconnect();
+    });
+
+    setError(null);
+  }, [producingSourceIds, soundEffectSource]);
+
   return {
     joined,
-    ownSource,
+    ownSources,
+    microphoneSource,
+    soundEffectSource,
     remoteStreams,
     muted,
     error,
-    microphoneEnabled: Boolean(localStreamRef.current),
+    microphoneEnabled: Boolean(microphoneStreamRef.current),
+    soundEffectsEnabled: Boolean(cueContextRef.current),
+    soundEffectReady: Boolean(
+      soundEffectSource &&
+        producingSourceIds.includes(soundEffectSource.sourceId)
+    ),
     routerMode: groupState?.routerMode,
+    sourcePolicies: groupState?.sourcePolicies ?? [],
     sfuReady,
     sendState,
     recvState,
     consumerCount: consumersRef.current.size,
+    producerCount: producingSourceIds.length,
     join,
     leave,
     enableMicrophone,
     disableMicrophone,
     toggleMute,
+    enableSoundEffects,
+    disableSoundEffects,
+    triggerSoundEffect,
     subscribeSource,
     unsubscribeSource
   };

@@ -3,8 +3,11 @@ import type {
   GroupMediaRouterMode,
   GroupMediaSource,
   GroupMediaStateMessage,
-  GroupMediaSubscription
+  GroupMediaSubscription,
+  MediaSourceKind,
+  MediaSourcePolicy
 } from "@commonline/protocol";
+import { mediaSourcePolicies } from "./mediaSourcePolicy";
 
 const MAX_PARTICIPANTS = 3;
 const ROUTER_MODE: GroupMediaRouterMode = "mediasoup-p0";
@@ -26,6 +29,8 @@ type GroupMutationResult =
       code:
         | "GROUP_MEDIA_FULL"
         | "MEDIA_SOURCE_NOT_FOUND"
+        | "MEDIA_SOURCE_POLICY_DENIED"
+        | "MEDIA_SOURCE_LIMIT"
         | "MEDIA_SUBSCRIPTION_INVALID"
         | "MEDIA_SESSION_STALE";
       message: string;
@@ -75,7 +80,7 @@ export class GroupMediaRegistry {
       return {
         ok: false,
         code: "GROUP_MEDIA_FULL",
-        message: `P0-j group media is limited to ${MAX_PARTICIPANTS} human participants.`
+        message: `P0-k group media is limited to ${MAX_PARTICIPANTS} human participants.`
       };
     }
 
@@ -131,9 +136,12 @@ export class GroupMediaRegistry {
     return session;
   }
 
-  publishMicrophone(input: {
+  publishSource(input: {
     roomId: string;
     participantId: string;
+    kind: MediaSourceKind;
+    label: string;
+    policy: MediaSourcePolicy;
   }): GroupMutationResult {
     const session = this.byRoom.get(input.roomId);
     if (
@@ -150,19 +158,39 @@ export class GroupMediaRegistry {
       };
     }
 
-    const existing = session.sources.find(
+    const ownedOfKind = session.sources.filter(
       (source) =>
         source.ownerParticipantId === input.participantId &&
-        source.kind === "microphone"
+        source.kind === input.kind
     );
-    if (existing) {
-      return { ok: true, session, changed: false };
+
+    if (ownedOfKind.length >= input.policy.maxInstancesPerPublisher) {
+      if (input.policy.maxInstancesPerPublisher === 1 && ownedOfKind[0]) {
+        return { ok: true, session, changed: false };
+      }
+      return {
+        ok: false,
+        code: "MEDIA_SOURCE_LIMIT",
+        message:
+          `The ${input.kind} source policy allows at most ${input.policy.maxInstancesPerPublisher} active source(s) per publisher.`
+      };
+    }
+
+    const label = input.label.trim().slice(0, 80);
+    if (!label) {
+      return {
+        ok: false,
+        code: "MEDIA_SOURCE_POLICY_DENIED",
+        message: "A governed media source requires a non-empty label."
+      };
     }
 
     session.sources.push({
-      sourceId: `mic-${crypto.randomUUID()}`,
+      sourceId: `source-${crypto.randomUUID()}`,
       ownerParticipantId: input.participantId,
-      kind: "microphone",
+      kind: input.kind,
+      label,
+      policyId: input.policy.policyId,
       publishedAt: new Date().toISOString()
     });
 
@@ -247,7 +275,7 @@ export class GroupMediaRegistry {
       return {
         ok: false,
         code: "MEDIA_SUBSCRIPTION_INVALID",
-        message: "A participant does not subscribe to its own microphone source."
+        message: "A participant does not subscribe to its own media source."
       };
     }
 
@@ -460,6 +488,7 @@ export class GroupMediaRegistry {
       routerMode: ROUTER_MODE,
       maxParticipants: MAX_PARTICIPANTS,
       participants: [...session.participants],
+      sourcePolicies: mediaSourcePolicies(),
       sources: [...session.sources],
       subscriptions: [...session.subscriptions]
     };

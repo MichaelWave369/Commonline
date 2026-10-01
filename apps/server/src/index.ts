@@ -5,6 +5,7 @@ import {
   type AgentWorkStatusMessage,
   type ClientMessage,
   type IntentRejectedMessage,
+  type MediaSourceKind,
   type RoomEventMessage,
   type RoomSnapshotMessage,
   type RtcSignalPayload,
@@ -16,6 +17,10 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { GroupMediaRegistry } from "./groupMediaRegistry";
 import { IdentityService } from "./identityService";
+import {
+  evaluateMediaSourcePolicy,
+  mediaSourcePolicy
+} from "./mediaSourcePolicy";
 import {
   isPolitePeer,
   MediaSessionRegistry
@@ -58,6 +63,7 @@ const httpServer = createServer((request, response) => {
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
         identity: "p256-challenge-response",
         groupMedia: "mediasoup-p0",
+        mediaSourcePolicy: "p0-k.1",
         sfu: sfu.status()
       })
     );
@@ -190,6 +196,16 @@ function reject(
   send(socket, { type: "intent_rejected", ...input });
 }
 
+function isMediaSourceKind(value: unknown): value is MediaSourceKind {
+  return (
+    value === "human-microphone" ||
+    value === "sound-effect" ||
+    value === "shared-music" ||
+    value === "agent-voice" ||
+    value === "system-tone"
+  );
+}
+
 function isRtcSignalPayload(value: unknown): value is RtcSignalPayload {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -233,7 +249,6 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "rtc_call_open" ||
       parsed.type === "group_media_join" ||
       parsed.type === "group_media_leave" ||
-      parsed.type === "group_media_publish_microphone" ||
       parsed.type === "group_media_unpublish" ||
       parsed.type === "group_media_subscribe" ||
       parsed.type === "group_media_unsubscribe" ||
@@ -243,6 +258,16 @@ function parseMessage(raw: RawData): ClientMessage | null {
       parsed.type === "sfu_produce" ||
       parsed.type === "sfu_consume" ||
       parsed.type === "sfu_consumer_resume"
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
+      parsed.type === "group_media_publish_source" &&
+      isMediaSourceKind(parsed.kind) &&
+      typeof parsed.label === "string" &&
+      parsed.label.trim().length > 0 &&
+      parsed.label.length <= 160
     ) {
       return parsed as ClientMessage;
     }
@@ -439,7 +464,7 @@ wss.on("connection", (socket) => {
         reject(socket, {
           requestId: message.requestId,
           code: "INVALID_INTENT",
-          message: "join_room is missing required P0-j fields."
+          message: "join_room is missing required P0-k fields."
         });
         return;
       }
@@ -618,27 +643,55 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (message.type === "group_media_publish_microphone") {
+    if (message.type === "group_media_publish_source") {
+      const actorParticipantId = session.participantId;
+      const room = service.getRoom(session.roomId);
+      const participant = room?.participants.find(
+        (candidate) => candidate.id === actorParticipantId
+      );
+
       if (
-        !groupMediaPermission(
-          session.roomId,
-          session.participantId,
-          "SPEAK"
-        )
+        !participant ||
+        typeof message.kind !== "string" ||
+        typeof message.label !== "string"
       ) {
         reject(socket, {
           requestId: message.requestId,
-          code: "NOT_AUTHORIZED",
-          message:
-            "Publishing a microphone source requires an active SPEAK grant.",
-          room: service.getRoom(session.roomId)
+          code: "INVALID_INTENT",
+          message: "A governed media source requires kind and label."
         });
         return;
       }
 
-      const published = groupMedia.publishMicrophone({
+      const policyDecision = evaluateMediaSourcePolicy({
+        kind: message.kind,
+        publisherKind: participant.kind,
+        hasRequiredCapability: Boolean(
+          room &&
+            hasCapability(
+              room,
+              actorParticipantId,
+              "SPEAK"
+            )
+        )
+      });
+
+      if (!policyDecision.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: policyDecision.code,
+          message: policyDecision.message,
+          room
+        });
+        return;
+      }
+
+      const published = groupMedia.publishSource({
         roomId: session.roomId,
-        participantId: session.participantId
+        participantId: actorParticipantId,
+        kind: message.kind,
+        label: message.label,
+        policy: policyDecision.policy
       });
 
       if (!published.ok) {
@@ -646,7 +699,7 @@ wss.on("connection", (socket) => {
           requestId: message.requestId,
           code: published.code,
           message: published.message,
-          room: service.getRoom(session.roomId)
+          room
         });
         return;
       }
@@ -923,33 +976,49 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      const actorParticipantId = session.participantId;
+      const sourcePolicy = source
+        ? mediaSourcePolicy(source.kind)
+        : undefined;
+      const room = service.getRoom(session.roomId);
+      const participant = room?.participants.find(
+        (candidate) => candidate.id === actorParticipantId
+      );
+
       if (
         !source ||
-        source.ownerParticipantId !== session.participantId ||
-        source.kind !== "microphone" ||
+        !sourcePolicy ||
+        sourcePolicy.executionState !== "executable" ||
+        source.policyId !== sourcePolicy.policyId ||
+        source.ownerParticipantId !== actorParticipantId ||
         message.kind !== "audio"
       ) {
         reject(socket, {
           requestId: message.requestId,
-          code: "MEDIA_SOURCE_NOT_FOUND",
+          code: "MEDIA_SOURCE_POLICY_DENIED",
           message:
-            "The SFU may only produce the caller's explicitly published microphone source."
+            "The SFU will only produce an executable Commonline source bound to its current policy."
         });
         return;
       }
 
       if (
-        !groupMediaPermission(
-          session.roomId,
-          session.participantId,
-          "SPEAK"
+        !participant ||
+        !sourcePolicy.allowedPublisherKinds.includes(
+          participant.kind
+        ) ||
+        !room ||
+        !hasCapability(
+          room,
+          actorParticipantId,
+          sourcePolicy.requiredCapability
         )
       ) {
         reject(socket, {
           requestId: message.requestId,
-          code: "NOT_AUTHORIZED",
+          code: "MEDIA_SOURCE_POLICY_DENIED",
           message:
-            "Producing audio into the SFU requires an active SPEAK grant."
+            `Producing ${source.kind} requires its active source policy and ${sourcePolicy.requiredCapability} authority.`
         });
         return;
       }
