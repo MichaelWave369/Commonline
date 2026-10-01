@@ -49,7 +49,7 @@ async function readIdentity(
   });
 }
 
-async function writeIdentity(identity: LocalIdentity) {
+export async function storeIdentity(identity: LocalIdentity) {
   const db = await openDatabase();
   return new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, "readwrite");
@@ -85,7 +85,7 @@ function asIdentityPublicKey(jwk: JsonWebKey): IdentityPublicKey {
   };
 }
 
-async function generateIdentity(
+export async function createIdentityCandidate(
   participantId: string
 ): Promise<LocalIdentity> {
   const generated = (await crypto.subtle.generateKey(
@@ -124,20 +124,18 @@ async function generateIdentity(
     privateKey
   };
 
-  await writeIdentity(identity);
   return identity;
 }
 
 export async function getOrCreateIdentity(
   participantId: string
 ): Promise<LocalIdentity> {
-  return (await readIdentity(participantId)) ?? generateIdentity(participantId);
-}
+  const existing = await readIdentity(participantId);
+  if (existing) return existing;
 
-export async function rotateLocalIdentity(
-  participantId: string
-): Promise<LocalIdentity> {
-  return generateIdentity(participantId);
+  const identity = await createIdentityCandidate(participantId);
+  await storeIdentity(identity);
+  return identity;
 }
 
 function proofPayload(challenge: IdentityChallengeMessage) {
