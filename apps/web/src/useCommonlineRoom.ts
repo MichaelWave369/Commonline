@@ -201,7 +201,7 @@ export function useCommonlineRoom() {
     reconnectTimerRef.current = window.setTimeout(() => {
       openSocketRef.current();
     }, delay);
-  }, [clearReconnectTimer, clearRtcConfigTimer]);
+  }, [clearReconnectTimer]);
 
   const openSocket = useCallback(() => {
     if (!wantsConnectionRef.current) return;
@@ -484,6 +484,7 @@ export function useCommonlineRoom() {
   }, [
     beginIdentity,
     clearReconnectTimer,
+    clearRtcConfigTimer,
     rememberRoom,
     scheduleReconnect,
     sendJoin
@@ -513,7 +514,7 @@ export function useCommonlineRoom() {
     socketRef.current = null;
     setConnection("disconnected");
     setIdentityState("idle");
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, clearRtcConfigTimer]);
 
   const recoverIdentity = useCallback(
     async (recoverParticipantId: string, code: string) => {
