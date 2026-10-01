@@ -94,3 +94,22 @@ The first build should answer one question:
 > Does a persistent room with one silent governed agent let two people produce useful work during a conversation and resume later with less reconstruction?
 
 If the answer is no, the correct response is to learn from that result, not attach seventeen more agents and an airhorn.
+
+
+## Current P0 implementation ladder
+
+The executable prototype has advanced through these internal rungs:
+
+- P0-a governed browser room
+- P0-b server-authoritative synchronization
+- P0-c one-to-one human WebRTC audio
+- P0-d frozen governance/scratch wire
+- P0-e durable SQLite room state
+- P0-f cryptographic participant identity and authority handoff
+- P0-g STUN/TURN internet hardening
+- P0-h exact call sessions and perfect negotiation
+- P0-i multiparty source/subscription boundary
+- P0-j real governed mediasoup SFU
+- P0-k governed media source policy with executable microphone + sound-effect classes
+
+The source taxonomy is intentionally ahead of feature execution: shared music, agent voice, and system tones are declared but reserved rather than being smuggled through the human microphone path.
