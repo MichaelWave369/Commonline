@@ -1059,6 +1059,22 @@ wss.on("connection", (socket) => {
       }
     }
 
+    if (
+      groupMedia.currentForParticipant(
+        session.roomId,
+        session.participantId
+      )
+    ) {
+      groupMedia.leave({
+        roomId: session.roomId,
+        participantId: session.participantId
+      });
+      broadcastGroupMediaState(
+        session.roomId,
+        `group-peer-left-${crypto.randomUUID()}`
+      );
+    }
+
     const left = service.leave(session.roomId, session.participantId);
     if (left) {
       const roomEvent: RoomEventMessage = {
