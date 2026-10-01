@@ -63,6 +63,7 @@ const httpServer = createServer((request, response) => {
         storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION,
         identity: "p256-challenge-response",
         groupMedia: "mediasoup-p0",
+        mediaSourcePolicy: "p0-k.1",
         sfu: sfu.status()
       })
     );
