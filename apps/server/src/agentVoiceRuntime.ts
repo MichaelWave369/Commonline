@@ -2,6 +2,7 @@ import type { MockSilentAgent } from "@commonline/agent-runtime";
 import type {
   AgentTurnState,
   AgentVoiceUtteranceKind,
+  ExchangeResponseState,
   AgentVoiceUtteranceState
 } from "@commonline/protocol";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@commonline/room-core";
 import { agentVoiceProfile } from "./agentVoicePolicy";
 import type { AttentionLeaseRegistry } from "./attentionLeaseRegistry";
+import type { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import type { GroupMediaRegistry } from "./groupMediaRegistry";
 import type { LocalVoiceRenderer } from "./localVoiceRenderer";
 import { mediaSourcePolicy } from "./mediaSourcePolicy";
@@ -39,6 +41,7 @@ export class AgentVoiceRuntime {
   constructor(
     private readonly service: RoomService,
     private readonly attentionLeases: AttentionLeaseRegistry,
+    private readonly exchanges: ConversationExchangeRegistry,
     private readonly groupMedia: GroupMediaRegistry,
     private readonly sfu: MediasoupSfuAdapter,
     private readonly renderer: LocalVoiceRenderer,
@@ -128,6 +131,176 @@ export class AgentVoiceRuntime {
     });
 
     return source;
+  }
+
+  async requestExchangeResponse(input: {
+    roomId: string;
+    actorParticipantId: string;
+    agentParticipantId: string;
+    exchangeId: string;
+    attentionLeaseId: string;
+    onState?: (
+      state: ExchangeResponseState,
+      metadata: {
+        voiceId: string;
+        sourceId?: string;
+        errorCode?: string;
+        exchange?: ReturnType<ConversationExchangeRegistry["get"]>;
+      }
+    ) => void;
+  }): Promise<AgentVoiceUtteranceResult> {
+    const room = this.service.getRoom(input.roomId);
+    if (!room) throw new Error("ROOM_NOT_FOUND");
+
+    const actor = room.participants.find(
+      (participant) =>
+        participant.id === input.actorParticipantId &&
+        participant.kind === "human"
+    );
+    if (!actor) {
+      throw new Error("NOT_AUTHORIZED");
+    }
+
+    const groupSession = this.groupMedia.currentForParticipant(
+      input.roomId,
+      input.actorParticipantId
+    );
+    if (!groupSession) {
+      throw new Error("VOICE_GROUP_MEDIA_REQUIRED");
+    }
+
+    const active = activeAgentVoiceGrant(
+      room,
+      input.agentParticipantId
+    );
+    if (!active) {
+      throw new Error("VOICE_GRANT_NOT_FOUND");
+    }
+
+    if (!this.renderer.status().ready) {
+      throw new Error("VOICE_RENDERER_UNAVAILABLE");
+    }
+
+    const busyKey = `${input.roomId}::${input.agentParticipantId}`;
+    if (this.busy.has(busyKey)) {
+      throw new Error("AGENT_TURN_BUSY");
+    }
+
+    const claimed = this.exchanges.claimResponse({
+      roomId: input.roomId,
+      exchangeId: input.exchangeId,
+      humanParticipantId: input.actorParticipantId,
+      agentParticipantId: input.agentParticipantId
+    });
+    if (!claimed.ok) {
+      throw new Error(claimed.code);
+    }
+
+    const consumed = this.attentionLeases.consume({
+      roomId: input.roomId,
+      leaseId: input.attentionLeaseId,
+      actorParticipantId: input.actorParticipantId,
+      agentParticipantId: input.agentParticipantId
+    });
+    if (!consumed.ok) {
+      this.exchanges.releaseResponse(input.exchangeId);
+      throw new Error(consumed.code);
+    }
+
+    const utteranceId = `exchange-response-${crypto.randomUUID()}`;
+    this.busy.add(busyKey);
+
+    try {
+      input.onState?.("thinking", {
+        voiceId: active.voiceId,
+        exchange: claimed.exchange
+      });
+
+      const source = await this.reconcile(input.roomId);
+      if (!source) {
+        throw new Error("VOICE_RENDERER_UNAVAILABLE");
+      }
+
+      const text = await this.agent.composeExchangeReply(
+        claimed.transcript
+      );
+
+      input.onState?.("rendering", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId,
+        exchange: claimed.exchange
+      });
+
+      const audio = await this.renderer.render({
+        voiceId: active.voiceId,
+        text
+      });
+
+      const session = this.groupMedia.current(input.roomId);
+      if (!session) {
+        throw new Error("VOICE_GROUP_MEDIA_REQUIRED");
+      }
+
+      const roomAfterRender = this.service.getRoom(input.roomId);
+      const stillActive = roomAfterRender
+        ? activeAgentVoiceGrant(
+            roomAfterRender,
+            input.agentParticipantId
+          )
+        : undefined;
+      if (
+        !stillActive ||
+        stillActive.voiceGrantId !== active.voiceGrantId
+      ) {
+        throw new Error("VOICE_GRANT_NOT_FOUND");
+      }
+
+      input.onState?.("speaking", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId,
+        exchange: claimed.exchange
+      });
+
+      const sent = await this.sfu.injectDirectPcm16({
+        session,
+        ownerParticipantId: input.agentParticipantId,
+        sourceId: source.sourceId,
+        audio
+      });
+
+      const completedExchange =
+        this.exchanges.completeResponse(input.exchangeId);
+
+      input.onState?.("completed", {
+        voiceId: active.voiceId,
+        sourceId: source.sourceId,
+        exchange: completedExchange
+      });
+
+      return {
+        utteranceId,
+        agentParticipantId: input.agentParticipantId,
+        voiceId: active.voiceId,
+        sourceId: source.sourceId,
+        durationMs: sent.durationMs
+      };
+    } catch (error) {
+      const released = this.exchanges.releaseResponse(
+        input.exchangeId
+      );
+
+      input.onState?.("failed", {
+        voiceId: active.voiceId,
+        exchange: released,
+        errorCode:
+          error instanceof Error
+            ? error.message
+            : "VOICE_RENDERER_UNAVAILABLE"
+      });
+      throw error;
+    } finally {
+      this.busy.delete(busyKey);
+    }
   }
 
   async requestDirectedTurn(input: {
