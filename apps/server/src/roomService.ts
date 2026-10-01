@@ -219,9 +219,32 @@ export class RoomService {
       };
     }
 
-    const resumeDelta = record.events.filter(
-      (event) => event.version > input.acknowledgedVersion
+    const knownParticipant = record.room.participants.some(
+      (participant) => participant.id === input.participantId
     );
+    const firstMembershipEvent = knownParticipant
+      ? record.events.find(
+          (event) =>
+            event.type === "participant_joined" &&
+            event.actorId === input.participantId
+        )
+      : undefined;
+
+    // P0-s history floor: first membership does not inherit the room's
+    // pre-membership event history. A reconnecting participant cannot rewind
+    // acknowledgement to zero to escape that floor.
+    const historyFloorVersion =
+      firstMembershipEvent?.version ??
+      (knownParticipant ? record.room.version + 1 : undefined);
+    const resumeAfterVersion =
+      historyFloorVersion === undefined
+        ? input.acknowledgedVersion
+        : Math.max(input.acknowledgedVersion, historyFloorVersion - 1);
+    const resumeDelta = knownParticipant
+      ? record.events.filter(
+          (event) => event.version > resumeAfterVersion
+        )
+      : [];
 
     const priorVersion = record.room.version;
     const nextRoom = joinParticipant(record.room, {

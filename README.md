@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-r adds a deterministic selective resumption brief over the durable room state already proven through P0-q, so returning participants can see accepted work, unresolved work, the next action, and missed durable events without persisting or summarizing conversation transcripts.
+This repository is at the **P0 prototype** stage. P0-s adds a server-enforced membership history floor: first-time participants receive current room state but no durable event replay from before their membership began, while known participants can resume missed post-membership events.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-r: CommonLine derives a compact resumption brief from durable room state and durable event deltas only. The wire remains `p0-q.1`; ephemeral listening transcripts, generated replies, attention leases, media, scratch, and signaling remain outside continuity.
+The current executable rung is P0-s: CommonLine keeps current room state separate from retrospective event history. First-time membership does not inherit earlier room events, and reconnect acknowledgement cannot rewind below the identity's durable membership floor. The wire remains `p0-q.1`.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md).
 
 ## Working name
 

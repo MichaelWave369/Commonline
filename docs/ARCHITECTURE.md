@@ -467,3 +467,16 @@ one exchange-bound spoken reply
 The registry stores transcript text only in private process memory for the exchange lifetime. Public exchange views contain identifiers and state but never transcript content.
 
 A failed reply releases the exchange claim but does not restore the consumed attention lease.
+
+
+## P0-s pre-membership history boundary
+
+The durable room snapshot and durable event replay are treated as distinct surfaces.
+
+On first membership, a participant receives the current authoritative room state but no event delta from before that identity joined. On later reconnects, the room service derives an immutable history floor from the earliest durable `participant_joined` event for that identity and clamps client acknowledgement to that floor.
+
+A client cannot obtain older events by claiming `acknowledgedVersion = 0`.
+
+If durable membership provenance is missing, the server fails closed and withholds older event replay rather than guessing.
+
+Retrospective history sharing is not implemented in P0-s.
