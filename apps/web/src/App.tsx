@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Capability } from "@commonline/protocol";
 import { Badge, Button, Card, SectionTitle } from "@commonline/ui";
 import { useCommonlineRoom } from "./useCommonlineRoom";
+import { useGroupAudio } from "./useGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
 
 export function App() {
@@ -26,6 +27,8 @@ export function App() {
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
+    groupRtcInbox,
+    groupMediaState,
     rtcConfig,
     notice,
     connect,
@@ -35,6 +38,14 @@ export function App() {
     transferAcceptAuthority,
     openRtcCall,
     sendRtcSignal,
+    joinGroupMedia,
+    leaveGroupMedia,
+    publishGroupMicrophone,
+    unpublishGroupSource,
+    subscribeGroupSource,
+    unsubscribeGroupSource,
+    sendGroupRtcSignal,
+    consumeGroupRtcSignal,
     consumeRtcSession,
     consumeRtcSignal
   } = roomSession;
@@ -48,6 +59,22 @@ export function App() {
     consumeRtcSignal,
     openRtcCall,
     sendRtcSignal
+  });
+
+  const group = useGroupAudio({
+    participantId,
+    roomConnected: connection === "connected",
+    rtcConfig,
+    groupState: groupMediaState,
+    signalInbox: groupRtcInbox,
+    consumeSignal: consumeGroupRtcSignal,
+    joinGroup: joinGroupMedia,
+    leaveGroup: leaveGroupMedia,
+    publishMicrophone: publishGroupMicrophone,
+    unpublishSource: unpublishGroupSource,
+    subscribeSource: subscribeGroupSource,
+    unsubscribeSource: unsubscribeGroupSource,
+    sendSignal: sendGroupRtcSignal
   });
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -151,6 +178,7 @@ export function App() {
 
   function leaveEpisode() {
     if (audio.state !== "idle") audio.hangup();
+    if (group.joined) group.leave();
     disconnect();
   }
 
@@ -158,8 +186,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-h MEDIA SESSION + PERFECT NEGOTIATION</div>
-          <h1>{room?.purpose ?? "Make each call an exact ephemeral object"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-i MULTIPARTY MEDIA BOUNDARY</div>
+          <h1>{room?.purpose ?? "Route identified human audio sources without collapsing authority"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -169,7 +197,10 @@ export function App() {
           {audio.callSession && (
             <Badge>CALL g{audio.callSession.generation}</Badge>
           )}
-          {room && <Badge>{room.schemaVersion}</Badge>}
+          {group.joined && (
+            <Badge>GROUP {group.routerMode?.toUpperCase() ?? "MEDIA"}</Badge>
+          )}
+          {room && <Badge>{room.schemaVersion}</Badge>
           {room && <Badge>ROOM v{room.version}</Badge>}
         </div>
       </header>
@@ -379,7 +410,8 @@ export function App() {
                       disabled={
                         !canSpeak ||
                         !canReceiveMedia ||
-                        !audio.rtcReady
+                        !audio.rtcReady ||
+                        group.joined
                       }
                     >
                       Call
