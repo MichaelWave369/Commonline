@@ -117,7 +117,7 @@ export class ToneVoiceRenderer implements LocalVoiceRenderer {
       const vibrato = Math.sin(2 * Math.PI * 5.2 * t) * 5;
       const envelope =
         Math.sin(
-          Math.PI *
+          (Math.PI / 2) *
             Math.min(
               1,
               (i / samples.length) * 8,
