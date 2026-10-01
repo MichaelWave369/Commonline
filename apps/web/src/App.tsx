@@ -55,6 +55,8 @@ export function App() {
     lastAgentVoiceGrant,
     lastAgentVoiceRevocation,
     lastAgentVoiceUtteranceStatus,
+    attentionLease,
+    lastAgentTurnStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -69,6 +71,9 @@ export function App() {
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
     revokeAgentVoice,
+    grantAttentionLease,
+    revokeAttentionLease,
+    requestAgentTurn,
     requestAgentVoiceUtterance,
     openRtcCall,
     sendRtcSignal,
@@ -110,6 +115,9 @@ export function App() {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const [taskText, setTaskText] = useState(
     "Compare two approaches and return the trade-offs as a compact artifact."
+  );
+  const [agentTurnPrompt, setAgentTurnPrompt] = useState(
+    "Give me one bounded response confirming the attention lease was consumed."
   );
   const [recoverParticipantId, setRecoverParticipantId] = useState(participantId);
   const [recoverCodeInput, setRecoverCodeInput] = useState("");
@@ -233,8 +241,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-n LOCAL AGENT VOICE RENDERER</div>
-          <h1>{room?.purpose ?? "Render Vessie's granted voice locally and route it only to explicit subscribers"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-o ATTENTION LEASE + AGENT TURN-TAKING</div>
+          <h1>{room?.purpose ?? "Give Vessie one bounded conversational turn without granting ambient speaking freedom"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -631,6 +639,152 @@ export function App() {
 
       <section className="hero-grid">
         <Card>
+          <SectionTitle>One-turn attention lease</SectionTitle>
+          <p className="muted">
+            P0-o separates voice authority from permission to take the floor.
+            A lease is ephemeral, belongs to the human who granted it, expires,
+            and can be consumed exactly once.
+          </p>
+
+          {!group.joined || !activeVessieVoiceGrant || !activeVessieVoiceSource ? (
+            <p className="notice">
+              Join group media and activate Vessie's governed voice before granting attention.
+            </p>
+          ) : attentionLease?.state === "active" ? (
+            <>
+              <div
+                className="delta"
+                data-testid="attention-lease-state"
+                data-attention-state={attentionLease.state}
+                data-attention-lease-id={attentionLease.leaseId}
+              >
+                <strong>Attention lease active</strong>
+                <div className="muted small">
+                  mode {attentionLease.mode}
+                  <br />
+                  turns {attentionLease.turnsConsumed}/{attentionLease.maxTurns}
+                  <br />
+                  expires {attentionLease.expiresAt}
+                </div>
+              </div>
+
+              <textarea
+                className="text-input"
+                aria-label="Directed agent turn prompt"
+                data-testid="agent-turn-prompt"
+                value={agentTurnPrompt}
+                maxLength={240}
+                onChange={(event) => setAgentTurnPrompt(event.target.value)}
+              />
+
+              <div className="button-row">
+                <Button
+                  data-testid="request-agent-turn"
+                  onClick={() =>
+                    requestAgentTurn(
+                      "agent-vessie",
+                      attentionLease.leaseId,
+                      agentTurnPrompt
+                    )
+                  }
+                  disabled={
+                    !agentTurnPrompt.trim() ||
+                    lastAgentTurnStatus?.state === "thinking" ||
+                    lastAgentTurnStatus?.state === "rendering" ||
+                    lastAgentTurnStatus?.state === "speaking"
+                  }
+                >
+                  Give Vessie this one turn
+                </Button>
+                <Button
+                  data-testid="revoke-attention-lease"
+                  onClick={() => revokeAttentionLease(attentionLease.leaseId)}
+                >
+                  Revoke attention lease
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {attentionLease && (
+                <div
+                  className="delta"
+                  data-testid="attention-lease-state"
+                  data-attention-state={attentionLease.state}
+                  data-attention-lease-id={attentionLease.leaseId}
+                >
+                  <strong>Previous lease {attentionLease.state}</strong>
+                  <div className="muted small">
+                    turns {attentionLease.turnsConsumed}/{attentionLease.maxTurns}
+                  </div>
+                </div>
+              )}
+              <Button
+                data-testid="grant-attention-lease"
+                onClick={() => grantAttentionLease("agent-vessie")}
+                disabled={
+                  !group.joined ||
+                  !activeVessieVoiceGrant ||
+                  !activeVessieVoiceSource
+                }
+              >
+                Grant Vessie one turn
+              </Button>
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Agent turn state</SectionTitle>
+          <div className="grant-grid">
+            <Badge>VOICE GRANT {activeVessieVoiceGrant ? "✓" : "✕"}</Badge>
+            <Badge>
+              ATTENTION {attentionLease?.state?.toUpperCase() ?? "NONE"}
+            </Badge>
+            <Badge>
+              TURN {lastAgentTurnStatus?.state?.toUpperCase() ?? "IDLE"}
+            </Badge>
+          </div>
+          <p className="muted">
+            The directed prompt is ephemeral in P0-o. Commonline broadcasts only
+            content-free turn status; it does not add the prompt or reply text to
+            durable room history.
+          </p>
+          {lastAgentTurnStatus && (
+            <div
+              className="delta"
+              data-testid="agent-turn-status"
+              data-turn-state={lastAgentTurnStatus.state}
+              data-attention-lease-id={lastAgentTurnStatus.attentionLeaseId}
+            >
+              <strong>Latest directed turn</strong>
+              <div className="muted small">
+                {lastAgentTurnStatus.state}
+                <br />
+                request {lastAgentTurnStatus.turnRequestId}
+                <br />
+                lease {lastAgentTurnStatus.attentionLeaseId}
+                {lastAgentTurnStatus.sourceId && (
+                  <>
+                    <br />
+                    source {lastAgentTurnStatus.sourceId}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="delta">
+            <strong>CAN SPEAK ≠ MAY TAKE THE FLOOR</strong>
+            <p className="muted small">
+              The durable voice grant authorizes Vessie's voice identity. The
+              ephemeral attention lease authorizes one human-requested turn.
+            </p>
+          </div>
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
           <SectionTitle>Live audio</SectionTitle>
           {audio.incomingOffer ? (
             <div className="call-panel">
@@ -940,10 +1094,11 @@ export function App() {
               </p>
             </div>
             <div className="delta">
-              <strong>SPEAK is necessary, not sufficient.</strong>
+              <strong>Source authority is necessary, not sufficient.</strong>
               <p className="muted small">
-                The source policy also checks principal kind, executable state,
-                per-publisher limits, and explicit downstream subscriptions.
+                Human sources require SPEAK; agent voice requires its own voice grant.
+                Principal kind, execution state, source limits, and explicit subscriptions
+                still apply independently.
               </p>
             </div>
           </Card>
@@ -1209,10 +1364,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-n activates a local renderer behind P0-m authority. Piper can synthesize Vessie's
-        granted voice locally, while CI uses a deterministic non-speech renderer to prove the
-        same server-side RTP injection path. Renderer capability never creates authority,
-        and listeners still receive nothing without explicit source subscriptions.
+        P0-o adds an ephemeral one-turn attention lease above P0-n voice capability.
+        A human in live group media may grant Vessie one directed turn; the lease belongs
+        to that human, expires, and is consumed exactly once. Voice authority and listener
+        subscriptions remain independent, and prompt/reply content stays out of durable history.
       </footer>
     </main>
   );
