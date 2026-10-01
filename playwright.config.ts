@@ -45,6 +45,7 @@ export default defineConfig({
         COMMONLINE_SFU_LISTEN_IP: "127.0.0.1",
         COMMONLINE_SFU_PORT: "44444",
         COMMONLINE_TTS_ENGINE: "tone",
+        COMMONLINE_STT_ENGINE: "deterministic",
         PORT: "8787"
       }
     },
