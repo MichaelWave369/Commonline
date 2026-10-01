@@ -1482,6 +1482,11 @@ wss.on("connection", (socket) => {
         roomId: session.roomId,
         participantId: session.participantId
       });
+      sfu.closeParticipant(
+        session.roomId,
+        session.participantId
+      );
+      reconcileGroupMedia(session.roomId);
       broadcastGroupMediaState(
         session.roomId,
         `group-peer-left-${crypto.randomUUID()}`
@@ -1501,9 +1506,12 @@ wss.on("connection", (socket) => {
 });
 
 function shutdown(signal: string) {
-  console.log(`Commonline received ${signal}; closing SQLite store.`);
+  console.log(
+    `Commonline received ${signal}; closing SFU and SQLite store.`
+  );
   wss.close();
   httpServer.close(() => {
+    sfu.close();
     store.close();
     process.exit(0);
   });
