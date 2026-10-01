@@ -4,20 +4,20 @@ import {
   mediaSourcePolicies
 } from "./mediaSourcePolicy";
 
-describe("P0-k media source policy", () => {
+describe("P0-m media source policy", () => {
   it("allows a human microphone only with SPEAK authority", () => {
     expect(
       evaluateMediaSourcePolicy({
         kind: "human-microphone",
         publisherKind: "human",
-        hasRequiredCapability: true
+        hasRequiredAuthority: true
       }).ok
     ).toBe(true);
 
     const denied = evaluateMediaSourcePolicy({
       kind: "human-microphone",
       publisherKind: "human",
-      hasRequiredCapability: false
+      hasRequiredAuthority: false
     });
     expect(denied.ok).toBe(false);
     if (!denied.ok) {
@@ -29,7 +29,7 @@ describe("P0-k media source policy", () => {
     const decision = evaluateMediaSourcePolicy({
       kind: "sound-effect",
       publisherKind: "human",
-      hasRequiredCapability: true
+      hasRequiredAuthority: true
     });
     expect(decision.ok).toBe(true);
     if (!decision.ok) return;
@@ -41,7 +41,7 @@ describe("P0-k media source policy", () => {
     const decision = evaluateMediaSourcePolicy({
       kind: "agent-voice",
       publisherKind: "human",
-      hasRequiredCapability: true
+      hasRequiredAuthority: true
     });
     expect(decision.ok).toBe(false);
     if (!decision.ok) {
@@ -59,6 +59,10 @@ describe("P0-k media source policy", () => {
       catalog.find((policy) => policy.kind === "agent-voice")
         ?.allowedPublisherKinds
     ).toEqual(["agent"]);
+    expect(
+      catalog.find((policy) => policy.kind === "agent-voice")
+        ?.requiredAuthority
+    ).toBe("AGENT_VOICE_GRANT");
     expect(
       catalog.find((policy) => policy.kind === "system-tone")
         ?.allowedPublisherKinds
