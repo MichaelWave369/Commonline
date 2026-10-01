@@ -7,9 +7,9 @@ import type {
 } from "@commonline/protocol";
 
 const MAX_PARTICIPANTS = 3;
-const ROUTER_MODE: GroupMediaRouterMode = "mesh-p0";
+const ROUTER_MODE: GroupMediaRouterMode = "mediasoup-p0";
 
-interface GroupMediaSession {
+export interface GroupMediaSession {
   roomId: string;
   mediaSessionId: string;
   generation: number;
@@ -75,7 +75,7 @@ export class GroupMediaRegistry {
       return {
         ok: false,
         code: "GROUP_MEDIA_FULL",
-        message: `P0-i group media is limited to ${MAX_PARTICIPANTS} human participants.`
+        message: `P0-j group media is limited to ${MAX_PARTICIPANTS} human participants.`
       };
     }
 
@@ -381,6 +381,49 @@ export class GroupMediaRegistry {
     }
 
     return { ok: true as const, session };
+  }
+
+  matchesSession(input: {
+    roomId: string;
+    mediaSessionId: string;
+    generation: number;
+  }) {
+    const session = this.byRoom.get(input.roomId);
+    return Boolean(
+      session &&
+        session.mediaSessionId === input.mediaSessionId &&
+        session.generation === input.generation
+    );
+  }
+
+  source(roomId: string, sourceId: string) {
+    return this.byRoom
+      .get(roomId)
+      ?.sources.find((source) => source.sourceId === sourceId);
+  }
+
+  hasSubscription(
+    roomId: string,
+    subscriberParticipantId: string,
+    sourceId: string
+  ) {
+    return Boolean(
+      this.byRoom.get(roomId)?.subscriptions.some(
+        (subscription) =>
+          subscription.subscriberParticipantId ===
+            subscriberParticipantId &&
+          subscription.sourceId === sourceId
+      )
+    );
+  }
+
+  hasParticipant(roomId: string, participantId: string) {
+    return Boolean(
+      this.byRoom.get(roomId)?.participants.some(
+        (participant) =>
+          participant.participantId === participantId
+      )
+    );
   }
 
   current(roomId: string) {
