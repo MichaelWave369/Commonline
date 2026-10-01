@@ -93,7 +93,11 @@ export function useCommonlineRoom() {
   const participantIdRef = useRef(initialParticipantId);
   const sessionId = useRef(tabSessionId()).current;
   const identityRef = useRef<LocalIdentity | null>(null);
-  const recoveryCandidateRef = useRef<LocalIdentity | null>(null);
+  const pendingRecoveryRef = useRef<{
+    participantId: string;
+    recoveryCode: string;
+    candidate: LocalIdentity;
+  } | null>(null);
 
   const [identityState, setIdentityState] = useState<IdentityState>("idle");
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
@@ -214,6 +218,21 @@ export function useCommonlineRoom() {
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
+      const pending = pendingRecoveryRef.current;
+      if (pending) {
+        const message: IdentityRecoverMessage = {
+          type: "identity_recover",
+          requestId: crypto.randomUUID(),
+          schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+          participantId: pending.participantId,
+          sessionId,
+          recoveryCode: pending.recoveryCode,
+          newPublicKey: pending.candidate.publicKey
+        };
+        socket.send(JSON.stringify(message));
+        return;
+      }
+
       void beginIdentity(socket);
     });
 
@@ -260,11 +279,12 @@ export function useCommonlineRoom() {
           setRecoveryCode(message.recoveryCode);
         }
 
-        if (message.recovered && recoveryCandidateRef.current) {
-          void storeIdentity(recoveryCandidateRef.current)
+        if (message.recovered && pendingRecoveryRef.current) {
+          const recoveredIdentity = pendingRecoveryRef.current.candidate;
+          void storeIdentity(recoveredIdentity)
             .then(() => {
-              identityRef.current = recoveryCandidateRef.current;
-              recoveryCandidateRef.current = null;
+              identityRef.current = recoveredIdentity;
+              pendingRecoveryRef.current = null;
               sendJoin(socket);
             })
             .catch((error) => {
@@ -360,6 +380,9 @@ export function useCommonlineRoom() {
         message.code === "IDENTITY_NOT_FOUND"
       ) {
         setIdentityState("recovery-required");
+        if (message.code === "IDENTITY_RECOVERY_INVALID") {
+          pendingRecoveryRef.current = null;
+        }
       }
 
       setNotice(
@@ -448,38 +471,36 @@ export function useCommonlineRoom() {
 
       try {
         const candidate = await createIdentityCandidate(cleanedId);
-        recoveryCandidateRef.current = candidate;
+        pendingRecoveryRef.current = {
+          participantId: cleanedId,
+          recoveryCode: cleanedCode,
+          candidate
+        };
         participantIdRef.current = cleanedId;
         setParticipantIdState(cleanedId);
         localStorage.setItem(PARTICIPANT_ID_KEY, cleanedId);
-
-        if (
-          !socketRef.current ||
-          socketRef.current.readyState !== WebSocket.OPEN
-        ) {
-          wantsConnectionRef.current = true;
-          openSocketRef.current();
-          await new Promise((resolve) => window.setTimeout(resolve, 0));
-        }
+        setIdentityState("challenging");
 
         const socket = socketRef.current;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          setNotice("Recovery transport is not connected yet. Retry in a moment.");
+        if (socket?.readyState === WebSocket.OPEN) {
+          const message: IdentityRecoverMessage = {
+            type: "identity_recover",
+            requestId: crypto.randomUUID(),
+            schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+            participantId: cleanedId,
+            sessionId,
+            recoveryCode: cleanedCode,
+            newPublicKey: candidate.publicKey
+          };
+          socket.send(JSON.stringify(message));
           return;
         }
 
-        const message: IdentityRecoverMessage = {
-          type: "identity_recover",
-          requestId: crypto.randomUUID(),
-          schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
-          participantId: cleanedId,
-          sessionId,
-          recoveryCode: cleanedCode,
-          newPublicKey: candidate.publicKey
-        };
-        socket.send(JSON.stringify(message));
+        wantsConnectionRef.current = true;
+        reconnectAttemptRef.current = 0;
+        openSocketRef.current();
       } catch (error) {
-        recoveryCandidateRef.current = null;
+        pendingRecoveryRef.current = null;
         setNotice(
           error instanceof Error
             ? error.message
