@@ -16,9 +16,18 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import { RoomService } from "./roomService";
 import { SessionRegistry } from "./sessionRegistry";
+import {
+  COMMONLINE_STORAGE_SCHEMA_VERSION,
+  SQLiteRoomStore
+} from "./sqliteRoomStore";
 
 const port = Number(process.env.PORT ?? 8787);
-const service = new RoomService();
+const databasePath = process.env.COMMONLINE_DB_PATH ?? "./data/commonline.db";
+const store = new SQLiteRoomStore(databasePath);
+const service = new RoomService(
+  "Prove concurrent work + trustworthy resumption",
+  store
+);
 const workPlane = new EphemeralWorkPlane();
 const agent = new MockSilentAgent("Vessie");
 
@@ -29,7 +38,9 @@ const httpServer = createServer((request, response) => {
       JSON.stringify({
         ok: true,
         service: "commonline-room",
-        schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION
+        schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
+        storage: "sqlite",
+        storageSchemaVersion: COMMONLINE_STORAGE_SCHEMA_VERSION
       })
     );
     return;
@@ -434,8 +445,20 @@ wss.on("connection", (socket) => {
   });
 });
 
+function shutdown(signal: string) {
+  console.log(`Commonline received ${signal}; closing SQLite store.`);
+  wss.close();
+  httpServer.close(() => {
+    store.close();
+    process.exit(0);
+  });
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+
 httpServer.listen(port, () => {
   console.log(
-    `Commonline room service listening on http://localhost:${port} (${COMMONLINE_WIRE_SCHEMA_VERSION})`
+    `Commonline room service listening on http://localhost:${port} (${COMMONLINE_WIRE_SCHEMA_VERSION}, storage ${COMMONLINE_STORAGE_SCHEMA_VERSION})`
   );
 });
