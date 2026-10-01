@@ -305,6 +305,71 @@ describe("P0-d RoomService wire freeze", () => {
     ).toBe(true);
   });
 
+  it("does not expose pre-membership event history to a first-time participant", () => {
+    const service = new RoomService("test room");
+
+    service.join({
+      roomId: "history-floor",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    service.leave("history-floor", "alice");
+
+    expect(service.getEventLog("history-floor").length).toBeGreaterThan(0);
+
+    const bob = service.join({
+      roomId: "history-floor",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    expect(bob.resumeDelta).toEqual([]);
+  });
+
+  it("lets a known participant resume only events missed after membership", () => {
+    const service = new RoomService("test room");
+
+    service.join({
+      roomId: "known-history",
+      participantId: "alice",
+      name: "Alice",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+
+    const bobFirstJoin = service.join({
+      roomId: "known-history",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: 0
+    });
+    expect(bobFirstJoin.resumeDelta).toEqual([]);
+
+    const bobKnownVersion = bobFirstJoin.room.version;
+    service.leave("known-history", "bob");
+    service.leave("known-history", "alice");
+
+    const bobResumed = service.join({
+      roomId: "known-history",
+      participantId: "bob",
+      name: "Bob",
+      requestedRole: "participant",
+      acknowledgedVersion: bobKnownVersion
+    });
+
+    expect(bobResumed.resumeDelta.length).toBeGreaterThan(0);
+    expect(
+      bobResumed.resumeDelta.every(
+        (event) => event.version > bobKnownVersion
+      )
+    ).toBe(true);
+  });
+
   it("authorizes RTC signaling without mutating durable room state", () => {
     const service = new RoomService("test room");
     service.join({
