@@ -1442,10 +1442,11 @@ wss.on("connection", (socket) => {
 
     if (message.type === "request_agent_voice_utterance") {
       const actorParticipantId = session.participantId;
+      const actorRoomId = session.roomId;
 
       try {
         await agentVoiceRuntime.requestUtterance({
-          roomId: session.roomId,
+          roomId: actorRoomId,
           actorParticipantId,
           agentParticipantId: message.agentParticipantId,
           voiceGrantId: message.voiceGrantId,
@@ -1454,7 +1455,7 @@ wss.on("connection", (socket) => {
           onState: (state, metadata) => {
             broadcastVoiceStatus({
               requestId: message.requestId,
-              roomId: session.roomId,
+              roomId: actorRoomId,
               utteranceId: metadata.utteranceId,
               agentParticipantId: message.agentParticipantId,
               voiceId: metadata.voiceId,
