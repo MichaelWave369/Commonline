@@ -9,7 +9,7 @@ import {
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-type SourceKind = "human-microphone" | "sound-effect";
+type SourceKind = "human-microphone" | "sound-effect" | "agent-voice";
 
 interface HumanBrowser {
   name: string;
@@ -245,8 +245,81 @@ test("P0-l proves live source-selective SFU routing across three browsers", asyn
       }
     };
 
+    // P0-n: authority must exist before renderer capability can create
+    // an agent-owned source. Alice is the original steward in this fresh room.
+    await alice.page.getByTestId("bootstrap-voice-authority").click();
+    await expect(
+      alice.page.getByTestId("grant-vessie-voice")
+    ).toBeVisible();
+    await alice.page.getByTestId("grant-vessie-voice").click();
+
+    const bobVoiceSource = sourceRow(
+      bob.page,
+      "agent-voice",
+      "Vessie"
+    );
+    const charlieVoiceSource = sourceRow(
+      charlie.page,
+      "agent-voice",
+      "Vessie"
+    );
+    await expect(bobVoiceSource).toBeVisible();
+    await expect(charlieVoiceSource).toBeVisible();
+
+    const bobVoiceSubscription = subscriptionButton(
+      bob.page,
+      "agent-voice",
+      "Vessie"
+    );
+    const charlieVoiceConsumer = consumerCard(
+      charlie.page,
+      "agent-voice",
+      "Vessie"
+    );
+    const bobVoiceConsumer = consumerCard(
+      bob.page,
+      "agent-voice",
+      "Vessie"
+    );
+
+    await bobVoiceSubscription.click();
+    await expect(bobVoiceConsumer).toHaveCount(1);
+    await expect(charlieVoiceConsumer).toHaveCount(0);
+
+    await expect(
+      alice.page.getByTestId("request-vessie-voice")
+    ).toBeEnabled();
+    await alice.page.getByTestId("request-vessie-voice").click();
+
+    await expect
+      .poll(
+        async () =>
+          (await alice.page
+            .getByTestId("agent-voice-utterance-status")
+            .getAttribute("data-utterance-state")) ?? "",
+        {
+          timeout: 20_000,
+          message: "expected governed Vessie utterance to complete"
+        }
+      )
+      .toBe("completed");
+
+    await expectPackets(bobVoiceConsumer);
+    await expect(charlieVoiceConsumer).toHaveCount(0);
+
+    const agentVoiceEvidence = {
+      bob: await evidence(bobVoiceConsumer),
+      charlieConsumerCount: await charlieVoiceConsumer.count()
+    };
+
+    // Revocation must remove the source and downstream Consumer, not merely
+    // hide a button while audio authority remains alive.
+    await alice.page.getByTestId("revoke-vessie-voice").click();
+    await expect(bobVoiceSource).toHaveCount(0);
+    await expect(bobVoiceConsumer).toHaveCount(0);
+
     const report = {
-      schema: "p0-l.acceptance.1",
+      schema: "p0-n.acceptance.1",
       test: testInfo.title,
       generatedAt: new Date().toISOString(),
       matrix: {
@@ -260,12 +333,17 @@ test("P0-l proves live source-selective SFU routing across three browsers", asyn
         }
       },
       initialEvidence,
-      finalEvidence
+      finalEvidence,
+      agentVoiceEvidence,
+      agentVoiceRevoked: {
+        sourceCount: await bobVoiceSource.count(),
+        consumerCount: await bobVoiceConsumer.count()
+      }
     };
 
     const reportPath = resolve(
       "test-results",
-      "p0l-media-acceptance.json"
+      "p0n-media-acceptance.json"
     );
     mkdirSync(dirname(reportPath), { recursive: true });
     writeFileSync(
@@ -274,7 +352,7 @@ test("P0-l proves live source-selective SFU routing across three browsers", asyn
       "utf8"
     );
 
-    await testInfo.attach("p0l-media-acceptance", {
+    await testInfo.attach("p0n-media-acceptance", {
       body: Buffer.from(JSON.stringify(report, null, 2)),
       contentType: "application/json"
     });
