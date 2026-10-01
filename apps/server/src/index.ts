@@ -1968,17 +1968,17 @@ wss.on("connection", (socket) => {
     sockets?.delete(socket);
     if (sockets?.size === 0) roomSockets.delete(session.roomId);
 
-    attentionLeases.removeParticipant(
-      session.roomId,
-      session.participantId
-    );
-
     const wasCurrent = sessions.unbindIfCurrent(
       session.roomId,
       session.participantId,
       socket
     );
     if (!wasCurrent) return;
+
+    attentionLeases.removeParticipant(
+      session.roomId,
+      session.participantId
+    );
 
     for (const ended of mediaSessions.endForParticipant(
       session.roomId,
