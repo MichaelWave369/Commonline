@@ -165,3 +165,36 @@ The legacy optional `GrantReceipt.revokedAt` field remains readable for P0-d mig
 The result is an `AuthorityTransferReceipt` referencing the revoked grant, revocation receipt, and newly issued grant.
 
 Transfer is idempotent across retry/restart.
+
+
+## P0-g media configuration profile
+
+Wire schema: `p0-g.1`.
+
+After authentication and room admission, the browser may send:
+
+```text
+rtc_config_request
+```
+
+The server returns ephemeral:
+
+```text
+rtc_config
+  iceServers
+  iceTransportPolicy
+  credentialMode
+  expiresAt?
+```
+
+This message is not a room event and does not increment the room version.
+
+TURN credentials prove permission to use relay infrastructure. They do not grant Commonline room capabilities.
+
+### Secure signaling rule
+
+Non-loopback deployments must use HTTPS + WSS. Plain `ws://` is accepted only for loopback development.
+
+### Media diagnostics
+
+WebRTC candidate selection, RTT, jitter, loss, byte counters, ICE errors, and connection-state changes remain client-local observations. They are not receipt claims and are not durable room truth.
