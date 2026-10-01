@@ -150,6 +150,7 @@ export type AgentWorkState =
   | "failed";
 
 export interface IdentityPublicKey {
+  [key: string]: string | string[] | boolean | undefined;
   kty: "EC";
   crv: "P-256";
   x: string;
