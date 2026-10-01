@@ -80,7 +80,7 @@ export class GroupMediaRegistry {
       return {
         ok: false,
         code: "GROUP_MEDIA_FULL",
-        message: `P0-k group media is limited to ${MAX_PARTICIPANTS} human participants.`
+        message: `P0-n group media is limited to ${MAX_PARTICIPANTS} human participants.`
       };
     }
 
@@ -195,6 +195,98 @@ export class GroupMediaRegistry {
     });
 
     return { ok: true, session, changed: true };
+  }
+
+  publishTrustedSource(input: {
+    roomId: string;
+    ownerParticipantId: string;
+    kind: MediaSourceKind;
+    label: string;
+    policy: MediaSourcePolicy;
+  }): GroupMutationResult {
+    const session = this.byRoom.get(input.roomId);
+    if (!session) {
+      return {
+        ok: false,
+        code: "MEDIA_SESSION_STALE",
+        message:
+          "At least one human must join group media before a trusted source can exist."
+      };
+    }
+
+    const existing = session.sources.find(
+      (source) =>
+        source.ownerParticipantId === input.ownerParticipantId &&
+        source.kind === input.kind
+    );
+    if (existing) {
+      return { ok: true, session, changed: false };
+    }
+
+    if (
+      session.sources.filter(
+        (source) =>
+          source.ownerParticipantId === input.ownerParticipantId &&
+          source.kind === input.kind
+      ).length >= input.policy.maxInstancesPerPublisher
+    ) {
+      return {
+        ok: false,
+        code: "MEDIA_SOURCE_LIMIT",
+        message:
+          `The ${input.kind} policy allows at most ${input.policy.maxInstancesPerPublisher} active source(s) per publisher.`
+      };
+    }
+
+    const label = input.label.trim().slice(0, 80);
+    if (!label) {
+      return {
+        ok: false,
+        code: "MEDIA_SOURCE_POLICY_DENIED",
+        message: "A trusted media source requires a non-empty label."
+      };
+    }
+
+    session.sources.push({
+      sourceId: `source-${crypto.randomUUID()}`,
+      ownerParticipantId: input.ownerParticipantId,
+      kind: input.kind,
+      label,
+      policyId: input.policy.policyId,
+      publishedAt: new Date().toISOString()
+    });
+
+    return { ok: true, session, changed: true };
+  }
+
+  unpublishTrustedSource(input: {
+    roomId: string;
+    ownerParticipantId: string;
+    kind: MediaSourceKind;
+  }) {
+    const session = this.byRoom.get(input.roomId);
+    if (!session) return undefined;
+
+    const sourceIds = new Set(
+      session.sources
+        .filter(
+          (source) =>
+            source.ownerParticipantId === input.ownerParticipantId &&
+            source.kind === input.kind
+        )
+        .map((source) => source.sourceId)
+    );
+
+    if (sourceIds.size === 0) return session;
+
+    session.sources = session.sources.filter(
+      (source) => !sourceIds.has(source.sourceId)
+    );
+    session.subscriptions = session.subscriptions.filter(
+      (subscription) => !sourceIds.has(subscription.sourceId)
+    );
+
+    return session;
   }
 
   unpublish(input: {
