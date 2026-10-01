@@ -138,3 +138,32 @@ P0-d acceptance is:
 A repeated request with the same accept id returns the original receipt. A competing acceptance for the same work item is rejected with the canonical receipt.
 
 Supersede/retract is intentionally not implemented yet.
+
+
+## P0-e durable store
+
+The authoritative room service now has a local SQLite adapter.
+
+Durable transitions use disk-first semantics:
+
+```text
+derive next state
+    ↓
+BEGIN IMMEDIATE
+    ↓
+verify persisted previous version
+    ↓
+write snapshot + append event
+    ↓
+COMMIT
+    ↓
+mutate in-memory cache
+    ↓
+broadcast
+```
+
+If SQLite fails, the in-memory authoritative room is not advanced.
+
+The database persists identity and governed outcomes but deliberately does not persist runtime presence state. Humans recover offline after restart and must establish a new live session.
+
+Scratch, status pulses, sessions, signaling, and media stay outside the store.
