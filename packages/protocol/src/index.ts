@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-o.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-p.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -366,6 +366,49 @@ export interface RequestAgentTurnMessage {
   prompt: string;
 }
 
+export type ListeningShareLeaseState =
+  | "active"
+  | "consumed"
+  | "revoked"
+  | "expired";
+
+export interface ListeningShareLease {
+  leaseId: string;
+  roomId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  state: ListeningShareLeaseState;
+  issuedAt: string;
+  expiresAt: string;
+  maxDurationMs: 5000;
+}
+
+export interface GrantListeningShareMessage {
+  type: "grant_listening_share";
+  requestId: string;
+  roomId: string;
+  agentParticipantId: string;
+}
+
+export interface RevokeListeningShareMessage {
+  type: "revoke_listening_share";
+  requestId: string;
+  roomId: string;
+  leaseId: string;
+}
+
+export interface SubmitListeningShareMessage {
+  type: "submit_listening_share";
+  requestId: string;
+  roomId: string;
+  shareId: string;
+  leaseId: string;
+  agentParticipantId: string;
+  sampleRate: 16000;
+  sampleCount: number;
+  pcm16Base64: string;
+}
+
 export interface RtcIceServerConfig {
   urls: string[];
   username?: string;
@@ -700,6 +743,9 @@ export type ClientMessage =
   | GrantAttentionLeaseMessage
   | RevokeAttentionLeaseMessage
   | RequestAgentTurnMessage
+  | GrantListeningShareMessage
+  | RevokeListeningShareMessage
+  | SubmitListeningShareMessage
   | RtcConfigRequestMessage
   | RtcCallOpenMessage
   | RtcSignalClientMessage
@@ -841,6 +887,44 @@ export interface AgentTurnStatusMessage {
   errorCode?: string;
 }
 
+export interface ListeningShareLeaseStateMessage {
+  type: "listening_share_lease_state";
+  requestId: string;
+  roomId: string;
+  lease: ListeningShareLease;
+}
+
+export type ListeningShareStatus =
+  | "received"
+  | "transcribing"
+  | "delivered"
+  | "failed";
+
+export interface ListeningShareStatusMessage {
+  type: "listening_share_status";
+  requestId: string;
+  roomId: string;
+  shareId: string;
+  leaseId: string;
+  humanParticipantId: string;
+  agentParticipantId: string;
+  state: ListeningShareStatus;
+  errorCode?: string;
+}
+
+export interface ListeningShareResultMessage {
+  type: "listening_share_result";
+  requestId: string;
+  roomId: string;
+  shareId: string;
+  leaseId: string;
+  agentParticipantId: string;
+  transcript: string;
+  engine: string;
+  sampleCount: number;
+  durationMs: number;
+}
+
 export interface AgentWorkStatusMessage {
   type: "agent_work_status";
   roomId: string;
@@ -895,6 +979,15 @@ export type RejectionCode =
   | "ATTENTION_LEASE_REVOKED"
   | "AGENT_TURN_BUSY"
   | "AGENT_TURN_PROMPT_INVALID"
+  | "LISTENING_LEASE_NOT_FOUND"
+  | "LISTENING_LEASE_NOT_OWNED"
+  | "LISTENING_LEASE_EXPIRED"
+  | "LISTENING_LEASE_CONSUMED"
+  | "LISTENING_LEASE_REVOKED"
+  | "LISTENING_AUDIO_INVALID"
+  | "LISTENING_SHARE_BUSY"
+  | "STT_UNAVAILABLE"
+  | "STT_FAILED"
   | "MEDIA_BUSY"
   | "MEDIA_SESSION_STALE"
   | "GROUP_MEDIA_FULL"
@@ -937,6 +1030,9 @@ export type ServerMessage =
   | AgentVoiceUtteranceStatusMessage
   | AttentionLeaseStateMessage
   | AgentTurnStatusMessage
+  | ListeningShareLeaseStateMessage
+  | ListeningShareStatusMessage
+  | ListeningShareResultMessage
   | AgentWorkStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage
