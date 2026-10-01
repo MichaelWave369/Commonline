@@ -5,7 +5,7 @@ import {
   mediasoupConfigFromEnv
 } from "./mediasoupSfu";
 
-describe("P0-j mediasoup SFU", () => {
+describe("P0-n mediasoup SFU", () => {
   it("requires an announced address for wildcard deployment binds", () => {
     expect(() =>
       mediasoupConfigFromEnv({
@@ -24,7 +24,7 @@ describe("P0-j mediasoup SFU", () => {
   });
 
   it(
-    "boots a real mediasoup worker and creates an Opus router",
+    "boots a real mediasoup worker with Opus and PCMU plus direct RTP injection",
     async () => {
       const adapter = await MediasoupSfuAdapter.create({
         listenIp: "127.0.0.1"
@@ -52,13 +52,52 @@ describe("P0-j mediasoup SFU", () => {
 
         const codecs = capabilities.codecs;
         expect(Array.isArray(codecs)).toBe(true);
+        const codecList = codecs as unknown[];
         expect(
-          (codecs as unknown[]).some((codec) => {
+          codecList.some((codec) => {
             if (!codec || typeof codec !== "object") return false;
             const value = codec as Record<string, unknown>;
             return value.mimeType === "audio/opus";
           })
         ).toBe(true);
+        expect(
+          codecList.some((codec) => {
+            if (!codec || typeof codec !== "object") return false;
+            const value = codec as Record<string, unknown>;
+            return value.mimeType === "audio/PCMU";
+          })
+        ).toBe(true);
+
+        session.sources.push({
+          sourceId: "voice-source",
+          ownerParticipantId: "agent-vessie",
+          kind: "agent-voice",
+          label: "Vessie voice",
+          policyId: "source-policy/agent-voice/p0-n.1",
+          publishedAt: new Date().toISOString()
+        });
+
+        const producerId = await adapter.ensureDirectAudioProducer({
+          session,
+          ownerParticipantId: "agent-vessie",
+          sourceId: "voice-source"
+        });
+        expect(producerId).toBeTruthy();
+
+        const injected = await adapter.injectDirectPcm16({
+          session,
+          ownerParticipantId: "agent-vessie",
+          sourceId: "voice-source",
+          audio: {
+            sampleRate: 8000,
+            samples: Int16Array.from(
+              { length: 320 },
+              (_, index) => (index % 20) * 500 - 5000
+            )
+          }
+        });
+        expect(injected.samplesSent).toBe(320);
+        expect(injected.durationMs).toBe(40);
       } finally {
         adapter.close();
       }
