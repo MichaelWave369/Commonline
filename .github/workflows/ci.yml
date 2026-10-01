@@ -47,3 +47,29 @@ jobs:
             test-results
             playwright-report
           if-no-files-found: warn
+
+
+  p0-experience-proof:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium runtime
+        run: npx playwright install --with-deps chromium
+      - name: Run P0-t end-to-end experience proof
+        run: npm run test:p0-experience
+      - name: Upload P0-t experience evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0t-experience-proof
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
