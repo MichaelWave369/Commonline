@@ -1,24 +1,33 @@
 import type {
   AcceptOutcomeMessage,
   AcceptanceReceipt,
+  AgentVoiceGrantReceipt,
+  AgentVoiceRevocationReceipt,
   Artifact,
   AuthorityTransferReceipt,
+  BootstrapAgentVoiceAuthorityMessage,
   RejectionCode,
   RequestedHumanRole,
   RoomEvent,
   RoomEventType,
   RoomSnapshot,
+  GrantAgentVoiceMessage,
+  RevokeAgentVoiceMessage,
   SubmitWorkMessage,
   TransferAcceptAuthorityMessage,
+  VoiceAuthorityBootstrapReceipt,
   WorkItem
 } from "@commonline/protocol";
 import {
   acceptOutcome,
+  bootstrapAgentVoiceAuthority,
   createRoom,
+  grantAgentVoice,
   hasCapability,
   joinParticipant,
   leaveParticipant,
   proposeArtifact,
+  revokeAgentVoice,
   SILENT_AGENT_PARTICIPANT_ID,
   submitWork,
   transferAcceptAuthority
@@ -37,6 +46,9 @@ export type AcceptedIntent = {
   work?: WorkItem;
   acceptance?: AcceptanceReceipt;
   authorityTransfer?: AuthorityTransferReceipt;
+  voiceAuthorityBootstrap?: VoiceAuthorityBootstrapReceipt;
+  agentVoiceGrant?: AgentVoiceGrantReceipt;
+  agentVoiceRevocation?: AgentVoiceRevocationReceipt;
   replayed?: boolean;
 };
 
@@ -47,6 +59,9 @@ export type RejectedIntent = {
   room?: RoomSnapshot;
   canonicalAcceptance?: AcceptanceReceipt;
   canonicalTransfer?: AuthorityTransferReceipt;
+  canonicalVoiceBootstrap?: VoiceAuthorityBootstrapReceipt;
+  canonicalVoiceGrant?: AgentVoiceGrantReceipt;
+  canonicalVoiceRevocation?: AgentVoiceRevocationReceipt;
 };
 
 export type IntentResult = AcceptedIntent | RejectedIntent;
@@ -266,6 +281,9 @@ export class RoomService {
       | SubmitWorkMessage
       | AcceptOutcomeMessage
       | TransferAcceptAuthorityMessage
+      | BootstrapAgentVoiceAuthorityMessage
+      | GrantAgentVoiceMessage
+      | RevokeAgentVoiceMessage
   ): IntentResult {
     const record = this.record(intent.roomId);
     if (!record) {
@@ -322,6 +340,48 @@ export class RoomService {
       }
     }
 
+    if (intent.type === "bootstrap_agent_voice_authority") {
+      const prior = record.room.voiceAuthorityBootstraps.find(
+        (receipt) => receipt.bootstrapId === intent.bootstrapId
+      );
+      if (prior) {
+        return {
+          ok: true,
+          room: record.room,
+          voiceAuthorityBootstrap: prior,
+          replayed: true
+        };
+      }
+    }
+
+    if (intent.type === "grant_agent_voice") {
+      const prior = record.room.agentVoiceGrants.find(
+        (receipt) => receipt.grantRequestId === intent.grantRequestId
+      );
+      if (prior) {
+        return {
+          ok: true,
+          room: record.room,
+          agentVoiceGrant: prior,
+          replayed: true
+        };
+      }
+    }
+
+    if (intent.type === "revoke_agent_voice") {
+      const prior = record.room.agentVoiceRevocations.find(
+        (receipt) => receipt.revokeRequestId === intent.revokeRequestId
+      );
+      if (prior) {
+        return {
+          ok: true,
+          room: record.room,
+          agentVoiceRevocation: prior,
+          replayed: true
+        };
+      }
+    }
+
     if (intent.baseVersion !== record.room.version) {
       return {
         ok: false,
@@ -337,6 +397,30 @@ export class RoomService {
 
     if (intent.type === "transfer_accept_authority") {
       return this.transferAcceptAuthority(
+        record,
+        actorParticipantId,
+        intent
+      );
+    }
+
+    if (intent.type === "bootstrap_agent_voice_authority") {
+      return this.bootstrapAgentVoiceAuthority(
+        record,
+        actorParticipantId,
+        intent
+      );
+    }
+
+    if (intent.type === "grant_agent_voice") {
+      return this.grantAgentVoice(
+        record,
+        actorParticipantId,
+        intent
+      );
+    }
+
+    if (intent.type === "revoke_agent_voice") {
+      return this.revokeAgentVoice(
         record,
         actorParticipantId,
         intent
@@ -514,6 +598,180 @@ export class RoomService {
       room: record.room,
       event,
       authorityTransfer: transition.receipt,
+      replayed: false
+    };
+  }
+
+
+  private bootstrapAgentVoiceAuthority(
+    record: RoomRecord,
+    actorParticipantId: string,
+    intent: BootstrapAgentVoiceAuthorityMessage
+  ): IntentResult {
+    const priorVersion = record.room.version;
+    const transition = bootstrapAgentVoiceAuthority(record.room, {
+      bootstrapId: intent.bootstrapId,
+      actorParticipantId,
+      acceptAuthorityGrantId: intent.acceptAuthorityGrantId
+    });
+
+    if (!transition.ok) {
+      return {
+        ok: false,
+        code: transition.code,
+        message: transition.message,
+        room: record.room,
+        canonicalVoiceBootstrap: transition.canonicalBootstrap
+      };
+    }
+
+    if (transition.replayed) {
+      return {
+        ok: true,
+        room: record.room,
+        voiceAuthorityBootstrap: transition.receipt,
+        replayed: true
+      };
+    }
+
+    const event = eventFor({
+      room: transition.room,
+      type: "voice_authority_bootstrapped",
+      actorId: actorParticipantId,
+      summary:
+        "Bootstrapped dedicated MANAGE_AGENT_VOICE authority for this room."
+    });
+
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
+
+    return {
+      ok: true,
+      room: record.room,
+      event,
+      voiceAuthorityBootstrap: transition.receipt,
+      replayed: false
+    };
+  }
+
+  private grantAgentVoice(
+    record: RoomRecord,
+    actorParticipantId: string,
+    intent: GrantAgentVoiceMessage
+  ): IntentResult {
+    const priorVersion = record.room.version;
+    const transition = grantAgentVoice(record.room, {
+      grantRequestId: intent.grantRequestId,
+      actorParticipantId,
+      agentParticipantId: intent.agentParticipantId,
+      voiceId: intent.voiceId,
+      authorityGrantId: intent.authorityGrantId,
+      expiresAt: intent.expiresAt
+    });
+
+    if (!transition.ok) {
+      return {
+        ok: false,
+        code: transition.code,
+        message: transition.message,
+        room: record.room,
+        canonicalVoiceGrant: transition.canonicalGrant
+      };
+    }
+
+    if (transition.replayed) {
+      return {
+        ok: true,
+        room: record.room,
+        agentVoiceGrant: transition.receipt,
+        replayed: true
+      };
+    }
+
+    const target = transition.room.participants.find(
+      (participant) => participant.id === intent.agentParticipantId
+    );
+
+    const event = eventFor({
+      room: transition.room,
+      type: "agent_voice_granted",
+      actorId: actorParticipantId,
+      summary:
+        `Granted agent voice ${intent.voiceId} to ${target?.name ?? intent.agentParticipantId}.`
+    });
+
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
+
+    return {
+      ok: true,
+      room: record.room,
+      event,
+      agentVoiceGrant: transition.receipt,
+      replayed: false
+    };
+  }
+
+  private revokeAgentVoice(
+    record: RoomRecord,
+    actorParticipantId: string,
+    intent: RevokeAgentVoiceMessage
+  ): IntentResult {
+    const priorVersion = record.room.version;
+    const transition = revokeAgentVoice(record.room, {
+      revokeRequestId: intent.revokeRequestId,
+      actorParticipantId,
+      voiceGrantId: intent.voiceGrantId,
+      authorityGrantId: intent.authorityGrantId
+    });
+
+    if (!transition.ok) {
+      return {
+        ok: false,
+        code: transition.code,
+        message: transition.message,
+        room: record.room,
+        canonicalVoiceRevocation: transition.canonicalRevocation
+      };
+    }
+
+    if (transition.replayed) {
+      return {
+        ok: true,
+        room: record.room,
+        agentVoiceRevocation: transition.receipt,
+        replayed: true
+      };
+    }
+
+    const event = eventFor({
+      room: transition.room,
+      type: "agent_voice_revoked",
+      actorId: actorParticipantId,
+      summary:
+        `Revoked agent voice grant ${intent.voiceGrantId}.`
+    });
+
+    this.commitTransition(
+      record,
+      transition.room,
+      event,
+      priorVersion
+    );
+
+    return {
+      ok: true,
+      room: record.room,
+      event,
+      agentVoiceRevocation: transition.receipt,
       replayed: false
     };
   }
