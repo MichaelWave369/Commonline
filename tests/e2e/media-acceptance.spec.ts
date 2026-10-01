@@ -123,6 +123,45 @@ async function evidence(locator: Locator) {
   };
 }
 
+async function waitForPacketQuiescence(
+  locator: Locator,
+  options: {
+    quietMs?: number;
+    sampleMs?: number;
+    timeoutMs?: number;
+  } = {}
+) {
+  const quietMs = options.quietMs ?? 600;
+  const sampleMs = options.sampleMs ?? 100;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const startedAt = Date.now();
+  let lastPackets = Number(
+    (await locator.getAttribute("data-packets-received")) ?? "0"
+  );
+  let stableSince = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, sampleMs));
+    const packets = Number(
+      (await locator.getAttribute("data-packets-received")) ?? "0"
+    );
+
+    if (packets !== lastPackets) {
+      lastPackets = packets;
+      stableSince = Date.now();
+      continue;
+    }
+
+    if (Date.now() - stableSince >= quietMs) {
+      return packets;
+    }
+  }
+
+  throw new Error(
+    `RTP packet counter did not become quiescent within ${timeoutMs}ms`
+  );
+}
+
 test("P0-q proves heard context stays silent until separately authorized reply", async ({
   browser
 }, testInfo) => {
@@ -436,9 +475,12 @@ test("P0-q proves heard context stays silent until separately authorized reply",
       charlieConsumerCount: await charlieVoiceConsumer.count()
     };
 
-    const beforeListeningPackets = Number(
-      (await bobVoiceConsumer.getAttribute("data-packets-received")) ?? "0"
-    );
+    // The previous authorized Vessie turn may still have a few RTP packets in
+    // flight after its application-level state reaches completed. Wait for the
+    // consumer counter to become quiet before establishing the P0-q baseline so
+    // late packets from that permitted turn cannot be misattributed to hearing.
+    const beforeListeningPackets =
+      await waitForPacketQuiescence(bobVoiceConsumer);
 
     // P0-p: Vessie still has no ambient microphone route. Alice explicitly
     // arms one bounded share, captures a short fake-mic segment, and submits it
