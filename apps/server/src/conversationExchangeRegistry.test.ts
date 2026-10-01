@@ -133,4 +133,46 @@ describe("P0-q conversation exchange registry", () => {
 
     vi.useRealTimers();
   });
+  it("does not expire or supersede an exchange while its authorized reply is in flight", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T19:00:00Z"));
+
+    const registry = new ConversationExchangeRegistry();
+    const first = registry.create({
+      roomId: "room",
+      humanParticipantId: "alice",
+      agentParticipantId: "agent-vessie",
+      listeningShareId: "share-1",
+      transcript: "first",
+      ttlMs: 15_000
+    });
+
+    const claimed = registry.claimResponse({
+      roomId: "room",
+      exchangeId: first.exchangeId,
+      humanParticipantId: "alice",
+      agentParticipantId: "agent-vessie"
+    });
+    expect(claimed.ok).toBe(true);
+
+    vi.advanceTimersByTime(20_000);
+
+    const second = registry.create({
+      roomId: "room",
+      humanParticipantId: "alice",
+      agentParticipantId: "agent-vessie",
+      listeningShareId: "share-2",
+      transcript: "second"
+    });
+
+    expect(registry.get(first.exchangeId)?.state).toBe("heard");
+    expect(registry.get(second.exchangeId)?.state).toBe("heard");
+    expect(
+      registry.completeResponse(first.exchangeId)?.state
+    ).toBe("responded");
+
+    vi.useRealTimers();
+  });
+
+
 });
