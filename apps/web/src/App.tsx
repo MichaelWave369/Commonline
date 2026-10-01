@@ -61,6 +61,7 @@ export function App() {
     listeningShareLease,
     lastListeningShareStatus,
     lastListeningShareResult,
+    lastExchangeResponseStatus,
     agentStatuses,
     rtcInbox,
     rtcSessionInbox,
@@ -78,6 +79,7 @@ export function App() {
     grantListeningShare,
     revokeListeningShare,
     submitListeningShare,
+    requestExchangeResponse,
     grantAttentionLease,
     revokeAttentionLease,
     requestAgentTurn,
@@ -254,8 +256,8 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-p GOVERNED PUSH-TO-SHARE LISTENING</div>
-          <h1>{room?.purpose ?? "Let Vessie hear one deliberately shared clip without ambient microphone access"}</h1>
+          <div className="eyebrow">COMMONLINE · P0-q EXPLICIT HEAR → REPLY BINDING</div>
+          <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
           <Badge>{connection.toUpperCase()}</Badge>
@@ -941,6 +943,8 @@ export function App() {
               data-stt-engine={lastListeningShareResult.engine}
               data-sample-count={lastListeningShareResult.sampleCount}
               data-duration-ms={lastListeningShareResult.durationMs}
+              data-exchange-id={lastListeningShareResult.exchange.exchangeId}
+              data-exchange-state={lastListeningShareResult.exchange.state}
             >
               <strong>Ephemeral transcript returned to you</strong>
               <p>{lastListeningShareResult.transcript}</p>
@@ -949,6 +953,10 @@ export function App() {
                 <br />
                 {lastListeningShareResult.sampleCount} samples ·{" "}
                 {lastListeningShareResult.durationMs} ms
+                <br />
+                exchange {lastListeningShareResult.exchange.exchangeId}
+                <br />
+                reply state {lastListeningShareResult.exchange.state}
               </div>
             </div>
           )}
@@ -958,6 +966,132 @@ export function App() {
             <p className="muted small">
               Vessie receives only the transcript derived from the explicitly shared
               clip. She is never added as a microphone subscriber in this rung.
+            </p>
+          </div>
+        </Card>
+      </section>
+
+      <section className="hero-grid">
+        <Card>
+          <SectionTitle>Heard exchange ≠ reply authority</SectionTitle>
+          <p className="muted">
+            P0-q binds one heard listening share to one possible reply, but hearing
+            does not authorize speech. The same human must separately grant a fresh
+            one-turn attention lease before Vessie may answer that exact exchange.
+          </p>
+
+          {!lastListeningShareResult ? (
+            <p className="notice">
+              Share one bounded clip with Vessie to create an ephemeral heard exchange.
+            </p>
+          ) : (
+            <>
+              <div
+                className="delta"
+                data-testid="conversation-exchange"
+                data-exchange-id={lastListeningShareResult.exchange.exchangeId}
+                data-exchange-state={lastListeningShareResult.exchange.state}
+              >
+                <strong>
+                  Exchange {lastListeningShareResult.exchange.state}
+                </strong>
+                <div className="muted small">
+                  {lastListeningShareResult.exchange.exchangeId}
+                  <br />
+                  from share {lastListeningShareResult.exchange.listeningShareId}
+                  <br />
+                  expires {lastListeningShareResult.exchange.expiresAt}
+                </div>
+              </div>
+
+              {lastListeningShareResult.exchange.state === "heard" &&
+              attentionLease?.state !== "active" ? (
+                <Button
+                  data-testid="grant-exchange-attention"
+                  onClick={() => grantAttentionLease("agent-vessie")}
+                  disabled={
+                    !group.joined ||
+                    !activeVessieVoiceGrant ||
+                    !activeVessieVoiceSource
+                  }
+                >
+                  Grant one reply turn
+                </Button>
+              ) : lastListeningShareResult.exchange.state === "heard" &&
+                attentionLease?.state === "active" ? (
+                <Button
+                  data-testid="authorize-exchange-response"
+                  onClick={() =>
+                    requestExchangeResponse(
+                      "agent-vessie",
+                      lastListeningShareResult.exchange.exchangeId,
+                      attentionLease.leaseId
+                    )
+                  }
+                  disabled={
+                    lastExchangeResponseStatus?.state === "thinking" ||
+                    lastExchangeResponseStatus?.state === "rendering" ||
+                    lastExchangeResponseStatus?.state === "speaking"
+                  }
+                >
+                  Authorize reply to this heard clip
+                </Button>
+              ) : (
+                <p className="notice">
+                  This exchange cannot authorize another reply.
+                </p>
+              )}
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Exchange response state</SectionTitle>
+          <div className="grant-grid">
+            <Badge>
+              HEARD {lastListeningShareResult?.exchange ? "✓" : "✕"}
+            </Badge>
+            <Badge>
+              ATTENTION {attentionLease?.state?.toUpperCase() ?? "NONE"}
+            </Badge>
+            <Badge>
+              RESPONSE {lastExchangeResponseStatus?.state?.toUpperCase() ?? "NONE"}
+            </Badge>
+          </div>
+
+          {lastExchangeResponseStatus && (
+            <div
+              className="delta"
+              data-testid="exchange-response-status"
+              data-response-state={lastExchangeResponseStatus.state}
+              data-exchange-id={lastExchangeResponseStatus.exchangeId}
+              data-exchange-state={
+                lastExchangeResponseStatus.exchange?.state ?? "unknown"
+              }
+            >
+              <strong>Exchange-bound reply</strong>
+              <div className="muted small">
+                {lastExchangeResponseStatus.state}
+                <br />
+                exchange {lastExchangeResponseStatus.exchangeId}
+                <br />
+                attention {lastExchangeResponseStatus.attentionLeaseId}
+                {lastExchangeResponseStatus.sourceId && (
+                  <>
+                    <br />
+                    source {lastExchangeResponseStatus.sourceId}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="delta">
+            <strong>HEARD CONTEXT ≠ AUTOMATIC RESPONSE</strong>
+            <p className="muted small">
+              Listening created the exchange. Voice authority supplies the mouth.
+              Attention supplies one floor turn. All three must line up before RTP
+              is injected.
             </p>
           </div>
         </Card>
@@ -1544,10 +1678,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-p adds governed listening without ambient ears. A human explicitly grants one
-        bounded push-to-share lease, captures at most five seconds of microphone audio, and
-        sends that clip to a local speech recognizer as selected context for Vessie. Audio and
-        transcript remain ephemeral; Vessie still receives no live microphone subscription.
+        P0-q binds a delivered listening share to one ephemeral conversation exchange.
+        Hearing that exchange does not authorize a reply: Vessie still needs active voice
+        authority, a fresh one-turn attention lease from the same human, and explicit listener
+        subscriptions before any response RTP can exist.
       </footer>
     </main>
   );
