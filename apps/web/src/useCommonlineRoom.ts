@@ -513,6 +513,13 @@ export function useCommonlineRoom() {
         return;
       }
 
+      // Correlated SFU replies are consumed by requestSfu above. Any SFU
+      // response without a pending request is stale transport chatter, not a
+      // generic intent rejection.
+      if (message.type !== "intent_rejected") {
+        return;
+      }
+
       if (message.room) rememberRoom(message.room);
 
       if (
