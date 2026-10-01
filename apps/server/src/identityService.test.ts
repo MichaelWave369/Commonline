@@ -66,7 +66,7 @@ async function keyPair() {
   return { pair, publicKey };
 }
 
-type SigningKey = Parameters<typeof webcrypto.subtle.sign>[2];
+type SigningKey = Parameters<typeof webcrypto.subtle.sign>[1];
 
 async function sign(
   privateKey: SigningKey,
