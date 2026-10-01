@@ -156,9 +156,9 @@ export class PiperCliVoiceRenderer implements LocalVoiceRenderer {
       local: true,
       voiceId: this.config.voiceId,
       detail: ready
-        ? `Piper CLI model: ${this.config.model}`
+        ? "Local Piper model configured."
         : this.config.model
-          ? `Piper model not found locally: ${this.config.model}`
+          ? "Configured Piper model is not available locally."
           : "COMMONLINE_PIPER_MODEL is not configured."
     };
   }
