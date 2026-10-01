@@ -372,10 +372,15 @@ export type MediaSourceKind =
 
 export type MediaSourceExecutionState = "executable" | "reserved";
 
+export type MediaSourceAuthorityRequirement =
+  | "SPEAK"
+  | "AGENT_VOICE_GRANT"
+  | "SERVICE_POLICY";
+
 export interface MediaSourcePolicy {
   policyId: string;
   kind: MediaSourceKind;
-  requiredCapability: "SPEAK";
+  requiredAuthority: MediaSourceAuthorityRequirement;
   allowedPublisherKinds: PrincipalKind[];
   audienceMode: "explicit-subscription";
   retention: "ephemeral";
