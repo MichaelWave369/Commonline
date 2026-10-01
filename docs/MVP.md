@@ -461,3 +461,26 @@ The server authorizes subscriptions and signaling, but `mesh-p0` cannot enforce 
 ## Next rung: P0-j
 
 Implement an SFU adapter behind the existing participant/source/subscription model, without replacing Commonline's room identity, grants, or durable undertaking semantics with an SFU vendor's room model.
+
+## P0-j — governed mediasoup SFU
+
+P0-j replaces the P0-i cooperative three-browser mesh with a real mediasoup SFU while preserving the participant/source/subscription control model.
+
+Implemented in this rung:
+
+- real mediasoup Worker and Opus Router
+- mediasoup-client browser Device
+- shared WebRTC server listener
+- per-participant send/receive transports
+- Commonline source ID to Producer binding
+- Commonline subscription to Consumer binding
+- SPEAK rechecked at Producer creation
+- RECEIVE_MEDIA plus explicit subscription rechecked at Consumer creation
+- paused-then-resumed Consumers
+- live SFU reconciliation when sources/subscriptions disappear
+- P0-i peer-to-peer group signaling disabled
+- one-to-one P0-h path left separate
+- SFU internals remain non-durable
+- explicit P0-i to P0-j metadata migration
+
+See SFU_P0J.md for the enforcement boundary and live acceptance test.
