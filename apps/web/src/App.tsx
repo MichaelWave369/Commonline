@@ -5,6 +5,33 @@ import { useCommonlineRoom } from "./useCommonlineRoom";
 import { useGroupAudio } from "./useGroupAudio";
 import { usePeerAudio } from "./usePeerAudio";
 
+function GroupRemoteAudio({
+  stream,
+  label
+}: {
+  stream: MediaStream;
+  label: string;
+}) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.srcObject = stream;
+    void ref.current.play().catch(() => {
+      // Browser autoplay policy may require a participant gesture.
+    });
+  }, [stream]);
+
+  return (
+    <div className="delta">
+      <strong>{label}</strong>
+      <audio ref={ref} autoPlay playsInline controls className="remote-audio">
+        Remote group audio playback is not supported by this browser.
+      </audio>
+    </div>
+  );
+}
+
 export function App() {
   const roomSession = useCommonlineRoom();
   const {
