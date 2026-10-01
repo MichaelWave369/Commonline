@@ -31,15 +31,15 @@ export function resolveCommonlineWebSocketUrl(input: {
     throw new Error("Commonline WebSocket URL must use ws:// or wss://.");
   }
 
-  if (resolved.protocol === "ws:" && !local) {
-    throw new Error(
-      "Commonline refuses plain ws:// outside localhost. Configure WSS for deployed rooms."
-    );
-  }
-
   if (page.protocol === "https:" && resolved.protocol !== "wss:") {
     throw new Error(
       "An HTTPS Commonline page must use WSS signaling."
+    );
+  }
+
+  if (resolved.protocol === "ws:" && !local) {
+    throw new Error(
+      "Commonline refuses plain ws:// outside localhost. Configure WSS for deployed rooms."
     );
   }
 
