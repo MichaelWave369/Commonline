@@ -115,3 +115,5 @@ The executable prototype has advanced through these internal rungs:
 The source taxonomy is intentionally ahead of feature execution: shared music, agent voice, and system tones are declared but reserved rather than being smuggled through the human microphone path.
 
 - P0-l three-browser live media acceptance with per-source RTP evidence
+
+- P0-m durable agent voice authority, voice identity, and explicit revocation
