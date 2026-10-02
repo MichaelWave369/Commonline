@@ -69,12 +69,15 @@ function systemPrompt() {
   );
 }
 
-export function buildQualificationRequest(model, prompt) {
+export function buildQualificationRequest(model, prompt, numCtx) {
   return {
     model,
     stream: false,
     think: false,
     format: "json",
+    options: {
+      num_ctx: numCtx
+    },
     messages: [
       {
         role: "system",
@@ -100,7 +103,10 @@ async function fetchJson(fetcher, url, init, timeoutMs) {
     });
 
     if (!response.ok) {
-      fail(`Qualification HTTP ${response.status} from ${url}.`);
+      const details = (await response.text()).trim();
+      fail(
+        `Qualification HTTP ${response.status} from ${url}${details ? `: ${details}` : "."}`
+      );
     }
 
     return await response.json();
@@ -162,7 +168,8 @@ export async function qualifyRegistration(
   for (const task of registration.tasks) {
     const requestBody = buildQualificationRequest(
       worker.model,
-      task.brief
+      task.brief,
+      worker.numCtx
     );
 
     const started = performance.now();
@@ -224,10 +231,12 @@ export async function qualifyRegistration(
     endpoint: new URL(worker.endpoint).origin,
     model: worker.model,
     modelDigest: digest,
+    numCtx: worker.numCtx,
     contract: {
       stream: false,
       think: false,
       format: "json",
+      numCtx: worker.numCtx,
       tools: false,
       inputScope: "work-prompt-only"
     },
@@ -250,6 +259,10 @@ export function finalizeRegistration(
 
   if (receipt.model !== registration.worker?.model) {
     fail("Qualification receipt model does not match registration.");
+  }
+
+  if (receipt.numCtx !== registration.worker?.numCtx) {
+    fail("Qualification receipt numCtx does not match registration.");
   }
 
   if (
