@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -47,6 +48,22 @@ function loopbackUrl(value) {
 
 function unique(values) {
   return new Set(values).size === values.length;
+}
+
+export function taskFingerprint(task) {
+  const payload = {
+    taskId: task?.taskId ?? "",
+    title: task?.title ?? "",
+    brief: task?.brief ?? "",
+    matchedRationale: task?.matchedRationale ?? ""
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(payload))
+    .digest("hex");
+}
+
+function sha256Digest(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
 }
 
 export function validateRegistration(registration, options = {}) {
@@ -219,6 +236,14 @@ export function validateRegistration(registration, options = {}) {
     fail(errors, "worker.inputScope must be work-prompt-only.");
   }
 
+  if (
+    !Number.isFinite(worker.maxQualificationLatencyMs) ||
+    worker.maxQualificationLatencyMs < 1_000 ||
+    worker.maxQualificationLatencyMs > 120_000
+  ) {
+    fail(errors, "worker.maxQualificationLatencyMs must be between 1000 and 120000.");
+  }
+
   const governance = registration.governanceEvidence ?? {};
   if (governance.passed !== true) {
     fail(errors, "governanceEvidence.passed must be true.");
@@ -240,8 +265,57 @@ export function validateRegistration(registration, options = {}) {
     }
   }
 
-  if (launchReady && registration.status !== "launch-ready") {
-    fail(errors, "status must be launch-ready.");
+  if (launchReady) {
+    if (registration.status !== "launch-ready") {
+      fail(errors, "status must be launch-ready.");
+    }
+
+    if (!sha256Digest(worker.modelDigest)) {
+      fail(errors, "worker.modelDigest must be a 64-character SHA-256 digest.");
+    }
+
+    const receipt = worker.qualificationReceipt;
+    if (!receipt || typeof receipt !== "object") {
+      fail(errors, "worker.qualificationReceipt is required for launch-ready status.");
+    } else {
+      if (receipt.schema !== "p0-y.qualification.1") {
+        fail(errors, "worker.qualificationReceipt.schema must be p0-y.qualification.1.");
+      }
+      if (receipt.passed !== true) {
+        fail(errors, "worker.qualificationReceipt.passed must be true.");
+      }
+      if (receipt.pilotId !== registration.pilotId) {
+        fail(errors, "worker.qualificationReceipt.pilotId must match pilotId.");
+      }
+      if (receipt.model !== worker.model) {
+        fail(errors, "worker.qualificationReceipt.model must match worker.model.");
+      }
+      if (receipt.modelDigest !== worker.modelDigest) {
+        fail(errors, "worker.qualificationReceipt.modelDigest must match worker.modelDigest.");
+      }
+      if (!Array.isArray(receipt.tasks) || receipt.tasks.length !== 2) {
+        fail(errors, "worker.qualificationReceipt.tasks must contain exactly two task receipts.");
+      } else if (Array.isArray(tasks) && tasks.length === 2) {
+        for (const task of tasks) {
+          const taskReceipt = receipt.tasks.find(
+            (candidate) => candidate.taskId === task.taskId
+          );
+          if (!taskReceipt) {
+            fail(errors, `qualification receipt is missing task ${task.taskId}.`);
+            continue;
+          }
+          if (taskReceipt.taskHash !== taskFingerprint(task)) {
+            fail(errors, `qualification receipt hash does not match current task ${task.taskId}.`);
+          }
+          if (
+            !finiteNonNegative(taskReceipt.wallMs) ||
+            taskReceipt.wallMs > worker.maxQualificationLatencyMs
+          ) {
+            fail(errors, `qualification latency for ${task.taskId} exceeds the registered limit.`);
+          }
+        }
+      }
+    }
   }
 
   return {
