@@ -196,6 +196,7 @@ function parseArtifactContent(content: string) {
 export class OllamaLocalSilentAgent extends BaseSilentAgent {
   readonly profile: SilentAgentProfile;
   private readonly baseUrl: URL;
+  private readonly model: string;
   private readonly timeoutMs: number;
   private readonly fetcher: FetchLike;
 
@@ -212,12 +213,22 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
     this.baseUrl = localOllamaBaseUrl(
       options.baseUrl ?? "http://127.0.0.1:11434"
     );
+    this.model = model;
     this.timeoutMs = options.timeoutMs ?? 45_000;
+    if (
+      !Number.isFinite(this.timeoutMs) ||
+      this.timeoutMs < 1_000 ||
+      this.timeoutMs > 120_000
+    ) {
+      throw new Error(
+        "P0-w agent timeout must be between 1000 and 120000 milliseconds."
+      );
+    }
     this.fetcher = options.fetcher ?? fetch;
     this.profile = {
       mode: "ollama-local",
       provider: "ollama",
-      model,
+      model: this.model,
       endpoint: this.baseUrl.origin,
       tools: false,
       inputScope: "work-prompt-only"
@@ -241,7 +252,7 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
             "content-type": "application/json"
           },
           body: JSON.stringify({
-            model: this.options.model,
+            model: this.model,
             stream: false,
             think: false,
             format: "json",
