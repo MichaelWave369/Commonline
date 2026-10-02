@@ -141,3 +141,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-x registered human-pilot evidence kit: six-pair matched comparison, counterbalanced assignment, later-day resumption, validated pseudonymous evidence, and descriptive candidate gates
 
 - P0-y pilot launch qualification: frozen matched tasks + candidate local model + digest-bound task qualification before pair 01
+
+- P0-z pilot execution pack: fixed six-pair A/B allocation, launch-registration hash binding, and incomplete result drafts for observed data

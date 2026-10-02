@@ -12,7 +12,7 @@
     "dev:web": "npm run dev -w @commonline/web",
     "build": "npm run build -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
-    "test": "npm run test -ws --if-present && node --test tests/p0x-pilot.test.mjs tests/p0y-qualify.test.mjs",
+    "test": "npm run test -ws --if-present && node --test tests/p0x-pilot.test.mjs tests/p0y-qualify.test.mjs tests/p0z-prepare.test.mjs",
     "test:media-acceptance": "playwright test tests/e2e/media-acceptance.spec.ts --project=chromium",
     "test:p0-experience": "playwright test tests/e2e/experience-proof.spec.ts --project=chromium",
     "test:p0-governance": "playwright test tests/e2e/governance-probes.spec.ts --project=chromium",
@@ -20,7 +20,8 @@
     "pilot:p0:validate-result": "node scripts/p0x-pilot.mjs validate-result",
     "pilot:p0:summarize": "node scripts/p0x-pilot.mjs summarize",
     "pilot:p0:qualify-worker": "node scripts/p0y-qualify.mjs qualify",
-    "pilot:p0:finalize-registration": "node scripts/p0y-qualify.mjs finalize"
+    "pilot:p0:finalize-registration": "node scripts/p0y-qualify.mjs finalize",
+    "pilot:p0:prepare-execution": "node scripts/p0z-prepare.mjs prepare"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

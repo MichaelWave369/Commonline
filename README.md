@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-y freezes the first human pilot's exact matched tasks and candidate local worker, then requires a digest-bound local Ollama qualification receipt before the registration can become launch-ready.
+This repository is at the **P0 prototype** stage. P0-z converts the already-qualified launch registration into six fixed pair execution packets with alternating counterbalance assignment, exact registration-hash binding, and deliberately incomplete result drafts.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -129,7 +129,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md), and [docs/GOVERNANCE_CLOSURE_P0V.md](docs/GOVERNANCE_CLOSURE_P0V.md), and [docs/PILOT_WORKER_P0W.md](docs/PILOT_WORKER_P0W.md), and [docs/HUMAN_PILOT_P0X.md](docs/HUMAN_PILOT_P0X.md), and [docs/PILOT_LAUNCH_P0Y.md](docs/PILOT_LAUNCH_P0Y.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md), and [docs/GOVERNANCE_CLOSURE_P0V.md](docs/GOVERNANCE_CLOSURE_P0V.md), and [docs/PILOT_WORKER_P0W.md](docs/PILOT_WORKER_P0W.md), and [docs/HUMAN_PILOT_P0X.md](docs/HUMAN_PILOT_P0X.md), and [docs/PILOT_LAUNCH_P0Y.md](docs/PILOT_LAUNCH_P0Y.md), and [docs/PILOT_EXECUTION_P0Z.md](docs/PILOT_EXECUTION_P0Z.md).
 
 ## Human pilot tooling
 
@@ -139,6 +139,7 @@ P0-x evidence templates live under `experiments/p0x/`. The active frozen launch 
 npm run pilot:p0:qualify-worker -- experiments/p0y/registration.candidate.json --out pilot-local/p0y-qualification.json
 npm run pilot:p0:finalize-registration -- experiments/p0y/registration.candidate.json pilot-local/p0y-qualification.json --out pilot-local/registration.launch.json
 npm run pilot:p0:validate-registration -- pilot-local/registration.launch.json --launch-ready
+npm run pilot:p0:prepare-execution -- pilot-local/registration.launch.json --out pilot-local/execution
 npm run pilot:p0:validate-result -- pair-01.json --registration registration.json
 npm run pilot:p0:summarize -- registration.json pair-01.json pair-02.json pair-03.json pair-04.json pair-05.json pair-06.json
 ```
