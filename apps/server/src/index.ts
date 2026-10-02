@@ -91,7 +91,11 @@ const sfu = await MediasoupSfuAdapter.create(
 
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" });
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store"
+    });
     response.end(
       JSON.stringify({
         ok: true,
