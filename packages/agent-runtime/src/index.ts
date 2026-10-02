@@ -1,7 +1,17 @@
 import type { Artifact, WorkItem } from "@commonline/protocol";
 
+export interface SilentAgentProfile {
+  mode: "mock" | "ollama-local";
+  provider: "deterministic-ci" | "ollama";
+  model?: string;
+  endpoint?: string;
+  tools: false;
+  inputScope: "work-prompt-only";
+}
+
 export interface SilentAgent {
   readonly name: string;
+  readonly profile: SilentAgentProfile;
   perform(work: WorkItem): Promise<Artifact>;
   composeVoiceProof(): Promise<string>;
   composeDirectedTurn(prompt: string): Promise<string>;
@@ -11,11 +21,19 @@ export interface SilentAgent {
   ): Promise<{ wordCount: number; characterCount: number }>;
 }
 
-export class MockSilentAgent implements SilentAgent {
+type FetchLike = typeof fetch;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+abstract class BaseSilentAgent implements SilentAgent {
+  abstract readonly profile: SilentAgentProfile;
+
   constructor(public readonly name: string) {}
 
   async observeSharedTranscript(transcript: string) {
-    await new Promise((resolve) => setTimeout(resolve, 90));
+    await sleep(90);
     return {
       wordCount: transcript
         .trim()
@@ -26,7 +44,7 @@ export class MockSilentAgent implements SilentAgent {
   }
 
   async composeExchangeReply(transcript: string): Promise<string> {
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await sleep(150);
 
     const words = transcript
       .trim()
@@ -40,7 +58,7 @@ export class MockSilentAgent implements SilentAgent {
   }
 
   async composeDirectedTurn(prompt: string): Promise<string> {
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await sleep(140);
 
     const wordCount = prompt
       .trim()
@@ -55,15 +73,26 @@ export class MockSilentAgent implements SilentAgent {
   }
 
   async composeVoiceProof(): Promise<string> {
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await sleep(120);
     return (
       "Vessie here. This voice is active only because Commonline holds a current " +
       "room-scoped voice grant, and only explicit subscribers should receive it."
     );
   }
 
+  abstract perform(work: WorkItem): Promise<Artifact>;
+}
+
+export class MockSilentAgent extends BaseSilentAgent {
+  readonly profile: SilentAgentProfile = {
+    mode: "mock",
+    provider: "deterministic-ci",
+    tools: false,
+    inputScope: "work-prompt-only"
+  };
+
   async perform(work: WorkItem): Promise<Artifact> {
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await sleep(700);
     return {
       id: `artifact-${crypto.randomUUID()}`,
       sourceWorkId: work.id,
@@ -77,4 +106,222 @@ export class MockSilentAgent implements SilentAgent {
       createdAt: new Date().toISOString()
     };
   }
+}
+
+export interface OllamaLocalSilentAgentOptions {
+  name?: string;
+  model: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+}
+
+interface OllamaChatResponse {
+  message?: {
+    role?: string;
+    content?: string;
+  };
+  done?: boolean;
+}
+
+function localOllamaBaseUrl(value: string) {
+  const url = new URL(value);
+  const hostname = url.hostname.toLowerCase();
+  const loopback =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "::1";
+
+  if (!loopback) {
+    throw new Error(
+      "P0-w Ollama adapter only permits a loopback endpoint."
+    );
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(
+      "P0-w Ollama endpoint must use http or https."
+    );
+  }
+
+  return url;
+}
+
+function parseArtifactContent(content: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(
+      "Ollama returned a non-JSON artifact."
+    );
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(
+      "Ollama artifact must be a JSON object."
+    );
+  }
+
+  const candidate = parsed as {
+    title?: unknown;
+    body?: unknown;
+  };
+  if (
+    typeof candidate.title !== "string" ||
+    candidate.title.trim().length === 0 ||
+    candidate.title.length > 120
+  ) {
+    throw new Error(
+      "Ollama artifact title is missing or outside the 120-character limit."
+    );
+  }
+  if (
+    typeof candidate.body !== "string" ||
+    candidate.body.trim().length === 0 ||
+    candidate.body.length > 6000
+  ) {
+    throw new Error(
+      "Ollama artifact body is missing or outside the 6000-character limit."
+    );
+  }
+
+  return {
+    title: candidate.title.trim(),
+    body: candidate.body.trim()
+  };
+}
+
+export class OllamaLocalSilentAgent extends BaseSilentAgent {
+  readonly profile: SilentAgentProfile;
+  private readonly baseUrl: URL;
+  private readonly timeoutMs: number;
+  private readonly fetcher: FetchLike;
+
+  constructor(private readonly options: OllamaLocalSilentAgentOptions) {
+    super(options.name ?? "Vessie");
+
+    const model = options.model.trim();
+    if (!model) {
+      throw new Error(
+        "COMMONLINE_OLLAMA_MODEL is required for ollama-local mode."
+      );
+    }
+
+    this.baseUrl = localOllamaBaseUrl(
+      options.baseUrl ?? "http://127.0.0.1:11434"
+    );
+    this.timeoutMs = options.timeoutMs ?? 45_000;
+    this.fetcher = options.fetcher ?? fetch;
+    this.profile = {
+      mode: "ollama-local",
+      provider: "ollama",
+      model,
+      endpoint: this.baseUrl.origin,
+      tools: false,
+      inputScope: "work-prompt-only"
+    };
+  }
+
+  async perform(work: WorkItem): Promise<Artifact> {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      this.timeoutMs
+    );
+
+    try {
+      const response = await this.fetcher(
+        new URL("/api/chat", this.baseUrl),
+        {
+          method: "POST",
+          redirect: "error",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            model: this.options.model,
+            stream: false,
+            think: false,
+            format: "json",
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Vessie, a silent worker inside a governed collaboration room. " +
+                  "You receive only one explicitly submitted bounded task. " +
+                  "Return exactly one useful draft artifact as JSON with string fields title and body. " +
+                  "Do not claim you executed external actions, contacted anyone, used tools, heard live conversation, " +
+                  "or accessed room history. Keep the artifact concise, inspectable, and directly responsive to the task."
+              },
+              {
+                role: "user",
+                content: work.prompt
+              }
+            ]
+          }),
+          signal: controller.signal
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Ollama request failed with HTTP ${response.status}.`
+        );
+      }
+
+      const payload = (await response.json()) as OllamaChatResponse;
+      const content = payload.message?.content;
+      if (typeof content !== "string" || content.trim().length === 0) {
+        throw new Error(
+          "Ollama response did not contain assistant content."
+        );
+      }
+
+      const artifact = parseArtifactContent(content);
+      return {
+        id: `artifact-${crypto.randomUUID()}`,
+        sourceWorkId: work.id,
+        title: artifact.title,
+        body: artifact.body,
+        producedBy: this.name,
+        status: "proposed",
+        createdAt: new Date().toISOString()
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+export type SilentAgentMode = "mock" | "ollama-local";
+
+export function createSilentAgent(options: {
+  mode?: string;
+  name?: string;
+  ollamaModel?: string;
+  ollamaBaseUrl?: string;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+} = {}): SilentAgent {
+  const mode = options.mode?.trim() || "mock";
+
+  if (mode === "mock") {
+    return new MockSilentAgent(options.name ?? "Vessie");
+  }
+
+  if (mode === "ollama-local") {
+    return new OllamaLocalSilentAgent({
+      name: options.name,
+      model: options.ollamaModel ?? "",
+      baseUrl: options.ollamaBaseUrl,
+      timeoutMs: options.timeoutMs,
+      fetcher: options.fetcher
+    });
+  }
+
+  throw new Error(
+    `Unsupported Commonline silent-agent mode: ${mode}`
+  );
 }
