@@ -899,3 +899,28 @@ See [PILOT_LAUNCH_P0Y.md](PILOT_LAUNCH_P0Y.md).
 The checked-in candidate is not launch-ready. The qualifier must run on the actual local Ollama machine that will serve the pilot.
 
 No room, media, authority, protocol, or SQLite behavior changes in P0-y.
+
+
+## P0-z — pilot execution pack
+
+P0-z converts one launch-ready P0-y registration into deterministic materials for all six human pairs.
+
+Implemented:
+
+- fixed pair allocation: 01=A, 02=B, 03=A, 04=B, 05=A, 06=B
+- exact 3/3 counterbalance
+- launch registration SHA-256 binding
+- one manifest plus six assignment files and six result drafts
+- exact task/order preservation
+- exact model tag, digest, endpoint, and context preservation
+- shared rubric preservation
+- result drafts start with null observation fields
+- result drafts cannot validate before real observations are entered
+- optional registrationHash validation on pair evidence
+- CI rejection of mismatched registration hashes
+
+See [PILOT_EXECUTION_P0Z.md](PILOT_EXECUTION_P0Z.md).
+
+### P0-z boundary
+
+P0-z creates no participant evidence and changes no CommonLine runtime behavior. It freezes execution materials so pair runs do not improvise assignments, tasks, or worker configuration.
