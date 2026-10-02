@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { RoomEvent, RoomSnapshot } from "@commonline/protocol";
+import {
+  COMMONLINE_WIRE_SCHEMA_VERSION,
+  type RoomEvent,
+  type RoomSnapshot
+} from "@commonline/protocol";
 import { buildResumptionBrief } from "./resumptionBrief";
 
 function roomFixture(
   overrides: Partial<RoomSnapshot> = {}
 ): RoomSnapshot {
   return {
-    schemaVersion: "p0-u.1",
+    schemaVersion: COMMONLINE_WIRE_SCHEMA_VERSION,
     roomId: "room-resume",
     purpose: "prove selective resumption",
     version: 12,
