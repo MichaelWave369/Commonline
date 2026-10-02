@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  taskFingerprint,
   validateRegistration,
   validatePairResult,
   summarizePilot
 } from "../scripts/p0x-pilot.mjs";
 
 function registration(overrides = {}) {
-  return {
+  const value = {
     schema: "p0-x.registration.1",
     evidenceClass: "human-pilot",
     status: "launch-ready",
@@ -131,6 +132,13 @@ function registration(overrides = {}) {
     },
     ...overrides
   };
+
+  value.worker.qualificationReceipt.tasks[0].taskHash =
+    taskFingerprint(value.tasks[0]);
+  value.worker.qualificationReceipt.tasks[1].taskHash =
+    taskFingerprint(value.tasks[1]);
+
+  return value;
 }
 
 function pairResult(index, options = {}) {
