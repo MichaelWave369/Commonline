@@ -14,3 +14,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Local P0 pilot qualification and participant evidence
+pilot-local/
