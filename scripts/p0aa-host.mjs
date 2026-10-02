@@ -15,6 +15,62 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+export async function verifyRegisteredWorkerDigest(
+  registration,
+  fetcher = fetch
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    10_000
+  );
+
+  try {
+    const endpoint = new URL(
+      "/api/tags",
+      registration.worker.endpoint
+    );
+    const response = await fetcher(endpoint, {
+      method: "GET",
+      redirect: "error",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const details = (await response.text()).trim();
+      fail(
+        `P0-aa could not verify local Ollama model: HTTP ${response.status}${details ? `: ${details}` : "."}`
+      );
+    }
+
+    const payload = await response.json();
+    const model = (payload.models ?? []).find(
+      (candidate) =>
+        candidate?.name === registration.worker.model ||
+        candidate?.model === registration.worker.model
+    );
+
+    if (!model) {
+      fail(
+        `P0-aa registered model ${registration.worker.model} is not installed.`
+      );
+    }
+
+    if (model.digest !== registration.worker.modelDigest) {
+      fail(
+        `P0-aa model digest drift: registered ${registration.worker.modelDigest}, installed ${model.digest ?? "missing"}.`
+      );
+    }
+
+    return {
+      model: registration.worker.model,
+      digest: model.digest
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function isPrivateIpv4(address) {
   const octets = address.split(".").map(Number);
   if (
@@ -177,6 +233,11 @@ export async function runPilotHost(args, options = {}) {
     lanIp,
     parentEnv: options.parentEnv ?? process.env
   });
+
+  await verifyRegisteredWorkerDigest(
+    registration,
+    options.fetcher ?? fetch
+  );
 
   const hostname =
     options.hostname ?? osHostname();
