@@ -110,6 +110,7 @@ export interface CommonlineServiceProfile {
     provider: "deterministic-ci" | "ollama";
     model?: string;
     endpoint?: string;
+    numCtx?: number;
     tools: false;
     inputScope: "work-prompt-only";
   };
