@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AcceptanceReceipt,
@@ -78,7 +78,10 @@ import {
   storeIdentity,
   type LocalIdentity
 } from "./identityVault";
-import { resolveCommonlineWebSocketUrl } from "./transportSecurity";
+import {
+  resolveCommonlineHealthUrl,
+  resolveCommonlineWebSocketUrl
+} from "./transportSecurity";
 
 const ROOM_ID = "commonline-p0";
 const PARTICIPANT_ID_KEY = "commonline:p0d:participant-id";
@@ -97,6 +100,20 @@ type ConnectionState =
   | "connecting"
   | "reconnecting"
   | "connected";
+
+export interface CommonlineServiceProfile {
+  ok: boolean;
+  schemaVersion?: string;
+  storageSchemaVersion?: string;
+  silentWorker?: {
+    mode: "mock" | "ollama-local";
+    provider: "deterministic-ci" | "ollama";
+    model?: string;
+    endpoint?: string;
+    tools: false;
+    inputScope: "work-prompt-only";
+  };
+}
 
 export type IdentityState =
   | "idle"
@@ -172,6 +189,8 @@ export function useCommonlineRoom() {
   const [identityState, setIdentityState] = useState<IdentityState>("idle");
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
+  const [serviceProfile, setServiceProfile] =
+    useState<CommonlineServiceProfile | null>(null);
   const [connection, setConnection] =
     useState<ConnectionState>("disconnected");
   const [resumeDelta, setResumeDelta] = useState<RoomEvent[]>([]);
@@ -1558,6 +1577,45 @@ export function useCommonlineRoom() {
     setRequestedRoleState(value);
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    const healthUrl = resolveCommonlineHealthUrl({
+      pageUrl: window.location.href,
+      configuredUrl: import.meta.env.VITE_COMMONLINE_WS_URL
+    });
+
+    void fetch(healthUrl, {
+      signal: controller.signal,
+      cache: "no-store"
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(
+            `Commonline health disclosure failed with HTTP ${response.status}.`
+          );
+        }
+        return (await response.json()) as CommonlineServiceProfile;
+      })
+      .then((profile) => {
+        if (active) setServiceProfile(profile);
+      })
+      .catch((error) => {
+        if (!active || controller.signal.aborted) return;
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "Commonline health disclosure is unavailable."
+        );
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
   return {
     participantId,
     sessionId,
@@ -1570,6 +1628,7 @@ export function useCommonlineRoom() {
     requestedRole,
     setRequestedRole,
     room,
+    serviceProfile,
     connection,
     resumeDelta,
     lastEvent,
