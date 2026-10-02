@@ -88,13 +88,13 @@ jobs:
       - run: npm ci
       - name: Install Chromium runtime
         run: npx playwright install --with-deps chromium
-      - name: Run P0-u governance negative controls
+      - name: Run P0-v governance closure matrix
         run: npm run test:p0-governance
-      - name: Upload P0-u governance evidence
+      - name: Upload P0-v governance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p0u-governance-probes
+          name: p0v-governance-closure
           path: |
             test-results
             playwright-report

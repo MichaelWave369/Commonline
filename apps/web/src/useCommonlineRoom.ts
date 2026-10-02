@@ -10,6 +10,7 @@ import {
   type AttentionLease,
   type AgentWorkStatusMessage,
   type AuthorityTransferReceipt,
+  type ContextDelegationStatusMessage,
   type ExchangeResponseStatusMessage,
   type ExternalEffectStatusMessage,
   type BootstrapAgentVoiceAuthorityMessage,
@@ -35,6 +36,7 @@ import {
   type ListeningShareStatusMessage,
   type MediaSourceKind,
   type RequestedHumanRole,
+  type RequestContextDelegationMessage,
   type RequestExchangeResponseMessage,
   type RequestExternalEffectMessage,
   type RevokeAgentVoiceMessage,
@@ -178,6 +180,8 @@ export function useCommonlineRoom() {
     useState<AcceptanceReceipt | null>(null);
   const [lastExternalEffectStatus, setLastExternalEffectStatus] =
     useState<ExternalEffectStatusMessage | null>(null);
+  const [lastContextDelegationStatus, setLastContextDelegationStatus] =
+    useState<ContextDelegationStatusMessage | null>(null);
   const [lastAuthorityTransfer, setLastAuthorityTransfer] =
     useState<AuthorityTransferReceipt | null>(null);
   const [lastVoiceAuthorityBootstrap, setLastVoiceAuthorityBootstrap] =
@@ -509,6 +513,18 @@ export function useCommonlineRoom() {
             : message.state === "completed"
               ? "Local proof effect completed under explicit execution authority."
               : "Local proof effect failed."
+        );
+        return;
+      }
+
+      if (message.type === "context_delegation_status") {
+        setLastContextDelegationStatus(message);
+        setNotice(
+          message.state === "blocked"
+            ? `Context delegation blocked: ${message.errorCode ?? "authority required"}.`
+            : message.state === "completed"
+              ? "Local delegation proof completed under explicit delegation authority."
+              : "Local delegation proof failed."
         );
         return;
       }
@@ -973,6 +989,40 @@ export function useCommonlineRoom() {
       };
 
       setLastExternalEffectStatus(null);
+      socketRef.current.send(JSON.stringify(message));
+    },
+    [room]
+  );
+
+  const requestContextDelegation = useCallback(
+    (artifactId: string) => {
+      if (!room || socketRef.current?.readyState !== WebSocket.OPEN) return;
+
+      const grant = room.grants.find(
+        (receipt) =>
+          receipt.subjectParticipantId === participantIdRef.current &&
+          receipt.capability === "DELEGATE_CONTEXT" &&
+          !receipt.revokedAt &&
+          !room.grantRevocations.some(
+            (revocation) => revocation.grantId === receipt.grantId
+          ) &&
+          (!receipt.expiresAt || Date.parse(receipt.expiresAt) > Date.now())
+      );
+
+      const message: RequestContextDelegationMessage = {
+        type: "request_context_delegation",
+        requestId: crypto.randomUUID(),
+        roomId: room.roomId,
+        baseVersion: room.version,
+        delegationRequestId: `delegation-${crypto.randomUUID()}`,
+        artifactId,
+        authorityGrantId: grant?.grantId ?? "no-delegation-grant",
+        kind: "accepted-artifact-summary",
+        target: "local-delegation-proof-sink",
+        purpose: "comparison-review"
+      };
+
+      setLastContextDelegationStatus(null);
       socketRef.current.send(JSON.stringify(message));
     },
     [room]
@@ -1525,6 +1575,7 @@ export function useCommonlineRoom() {
     lastEvent,
     lastAcceptance,
     lastExternalEffectStatus,
+    lastContextDelegationStatus,
     lastAuthorityTransfer,
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
@@ -1548,6 +1599,7 @@ export function useCommonlineRoom() {
     submitWork,
     acceptOutcome,
     requestExternalEffect,
+    requestContextDelegation,
     transferAcceptAuthority,
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,

@@ -44,7 +44,8 @@ const MIGRATABLE_SCHEMA_PAIRS = new Set([
   "p0-n.1|p0-n.1",
   "p0-o.1|p0-o.1",
   "p0-p.1|p0-p.1",
-  "p0-q.1|p0-q.1"
+  "p0-q.1|p0-q.1",
+  "p0-q.1|p0-u.1"
 ]);
 
 type SqlValue = string | number | null;

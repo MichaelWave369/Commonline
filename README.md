@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-u makes the external-effect boundary executable: an accepted artifact still cannot trigger even the harmless local proof sink without an exact active `EXECUTE_EXTERNAL_EFFECT` grant, and P0 issues no such grant by default.
+This repository is at the **P0 prototype** stage. P0-v closes the technical governance matrix for the P0 exit criteria: ungranted speaking, pre-membership history replay, onward context delegation, and external effects are each blocked under executable acceptance probes.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-u: CI can accept an artifact, attempt a bounded external-effect probe, and prove the executor blocks it without exact execution authority. The only effect adapter is an in-memory local proof sink. The wire is `p0-u.1`; the physical SQLite layout remains `p0-q.1`.
+The current executable rung is P0-v: CI now records one governance-closure receipt covering speaking, history, delegation, and external effects. Delegation and effect targets remain process-local proof sinks, and P0 issues neither delegation nor execution grants. The wire is `p0-v.1`; the physical SQLite layout remains `p0-q.1`.
 
 ```bash
 npm install
@@ -119,7 +119,7 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md), and [docs/GOVERNANCE_CLOSURE_P0V.md](docs/GOVERNANCE_CLOSURE_P0V.md).
 
 ## Working name
 

@@ -942,7 +942,7 @@ describe("P0-e SQLite durability", () => {
 
 
 
-  it("migrates P0-q wire metadata forward to P0-u without changing the storage layout", () => {
+  it("migrates P0-u wire metadata forward to the current wire without changing the storage layout", () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
 
@@ -964,7 +964,7 @@ describe("P0-e SQLite durability", () => {
       .run("storage_version", "p0-q.1");
     raw
       .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
-      .run("wire_schema_version", "p0-q.1");
+      .run("wire_schema_version", "p0-u.1");
     raw
       .prepare("INSERT INTO schema_meta(key, value) VALUES (?, ?)")
       .run("created_at", new Date().toISOString());
@@ -973,10 +973,10 @@ describe("P0-e SQLite durability", () => {
         "INSERT INTO rooms(room_id, purpose, version, wire_schema_version, updated_at) VALUES (?, ?, ?, ?, ?)"
       )
       .run(
-        "p0q-room",
-        "p0-q room",
+        "p0u-room",
+        "p0-u room",
         0,
-        "p0-q.1",
+        "p0-u.1",
         new Date().toISOString()
       );
     raw.close();
@@ -988,7 +988,7 @@ describe("P0-e SQLite durability", () => {
     expect(migrated.metadata().wire_schema_version).toBe(
       COMMONLINE_WIRE_SCHEMA_VERSION
     );
-    expect(migrated.loadRoom("p0q-room")?.schemaVersion).toBe(
+    expect(migrated.loadRoom("p0u-room")?.schemaVersion).toBe(
       COMMONLINE_WIRE_SCHEMA_VERSION
     );
     expect(migrated.metadata().migrated_at).toBeTruthy();

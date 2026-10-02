@@ -451,3 +451,29 @@ P0 issues no execution grants. Normal product behavior is therefore `external_ef
 The local proof sink is process-local and intentionally incapable of network, payment, messaging, deployment, filesystem, or device effects.
 
 The SQLite table layout remains `p0-q.1`; only stored wire metadata advances to `p0-u.1`.
+
+
+## P0-v governance closure profile
+
+Wire schema: `p0-v.1`.
+
+P0-v adds capability:
+
+```text
+DELEGATE_CONTEXT
+```
+
+and wire messages:
+
+```text
+request_context_delegation
+context_delegation_status
+```
+
+The request binds the current room version, accepted artifact ID, stable delegation request ID, exact authority grant ID, fixed `accepted-artifact-summary` kind, fixed `comparison-review` purpose, and `local-delegation-proof-sink` target.
+
+The runtime refuses onward delegation unless the supplied grant belongs to the requester, carries `DELEGATE_CONTEXT`, is unrevoked, and is unexpired.
+
+P0 issues no delegation grants. The normal P0-v status is therefore `blocked / NOT_AUTHORIZED`.
+
+The physical SQLite layout remains `p0-q.1`; existing `p0-u.1` wire metadata on that layout migrates in place to `p0-v.1`.
