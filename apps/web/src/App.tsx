@@ -53,6 +53,7 @@ export function App() {
     lastEvent,
     lastAcceptance,
     lastExternalEffectStatus,
+    lastContextDelegationStatus,
     lastAuthorityTransfer,
     lastVoiceAuthorityBootstrap,
     lastAgentVoiceGrant,
@@ -75,6 +76,7 @@ export function App() {
     submitWork,
     acceptOutcome,
     requestExternalEffect,
+    requestContextDelegation,
     transferAcceptAuthority,
     bootstrapAgentVoiceAuthority,
     grantAgentVoice,
@@ -264,7 +266,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-u EXTERNAL EFFECT FIREWALL</div>
+          <div className="eyebrow">COMMONLINE · P0-v GOVERNANCE CLOSURE MATRIX</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -398,6 +400,8 @@ export function App() {
             <Badge>SPEAK {canSpeak ? "✓" : "✕"}</Badge>
             <Badge>ACCEPT {canAccept ? "✓" : "✕"}</Badge>
             <Badge>MANAGE AGENT VOICE {canManageAgentVoice ? "✓" : "✕"}</Badge>
+            <Badge>DELEGATE {activeGrant("DELEGATE_CONTEXT") ? "✓" : "✕"}</Badge>
+            <Badge>EFFECT {activeGrant("EXECUTE_EXTERNAL_EFFECT") ? "✓" : "✕"}</Badge>
           </div>
           {me && (
             <p className="muted small">
@@ -1650,6 +1654,14 @@ export function App() {
                         </div>
                         <div className="button-row" style={{ marginTop: 10 }}>
                           <Button
+                            data-testid="probe-context-delegation"
+                            data-artifact-id={artifact.id}
+                            onClick={() => requestContextDelegation(artifact.id)}
+                            disabled={connection !== "connected"}
+                          >
+                            Probe context delegation firewall
+                          </Button>
+                          <Button
                             data-testid="probe-external-effect"
                             data-artifact-id={artifact.id}
                             onClick={() => requestExternalEffect(artifact.id)}
@@ -1658,6 +1670,31 @@ export function App() {
                             Probe external effect firewall
                           </Button>
                         </div>
+                        {lastContextDelegationStatus?.artifactId === artifact.id && (
+                          <div
+                            className="delta"
+                            data-testid="context-delegation-status"
+                            data-delegation-state={lastContextDelegationStatus.state}
+                            data-delegation-error={lastContextDelegationStatus.errorCode ?? ""}
+                          >
+                            <strong>
+                              Context delegation {lastContextDelegationStatus.state}
+                            </strong>
+                            <div className="muted small">
+                              {lastContextDelegationStatus.kind} → {lastContextDelegationStatus.target}
+                              <br />
+                              purpose {lastContextDelegationStatus.purpose}
+                              <br />
+                              authority {lastContextDelegationStatus.authorityGrantId}
+                              {lastContextDelegationStatus.errorCode && (
+                                <>
+                                  <br />
+                                  {lastContextDelegationStatus.errorCode}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {lastExternalEffectStatus?.artifactId === artifact.id && (
                           <div
                             className="delta"
@@ -1800,10 +1837,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-u makes the external-effect boundary executable without making the prototype effectful.
-        Accepting an artifact still grants no execution authority. The only effect adapter is a local
-        proof sink, and the executor refuses it unless the caller presents an exact active
-        EXECUTE_EXTERNAL_EFFECT grant. P0 issues no such grant by default.
+        P0-v closes the technical P0 governance matrix: speaking requires media authority,
+        first-time membership does not inherit earlier event history, onward context delegation
+        requires separate DELEGATE_CONTEXT authority, and accepted artifacts remain inert without
+        EXECUTE_EXTERNAL_EFFECT authority. P0 issues neither delegation nor execution grants.
       </footer>
     </main>
   );
