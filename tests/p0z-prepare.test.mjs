@@ -10,10 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildExecutionPack,
-  registrationFingerprint,
   writeExecutionPack
 } from "../scripts/p0z-prepare.mjs";
 import {
+  registrationFingerprint,
   taskFingerprint,
   validatePairResult
 } from "../scripts/p0x-pilot.mjs";
