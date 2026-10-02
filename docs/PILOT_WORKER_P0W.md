@@ -72,6 +72,7 @@ Optional:
 ```text
 COMMONLINE_OLLAMA_URL=http://127.0.0.1:11434
 COMMONLINE_AGENT_TIMEOUT_MS=45000
+COMMONLINE_AGENT_NUM_CTX=4096
 ```
 
 P0-w accepts only loopback Ollama endpoints:
@@ -179,6 +180,7 @@ $env:COMMONLINE_AGENT_MODE = "ollama-local"
 $env:COMMONLINE_OLLAMA_MODEL = "<local-model-name>"
 $env:COMMONLINE_OLLAMA_URL = "http://127.0.0.1:11434"
 $env:COMMONLINE_AGENT_TIMEOUT_MS = "45000"
+$env:COMMONLINE_AGENT_NUM_CTX = "4096"
 npm run dev
 ```
 
@@ -225,3 +227,8 @@ The next evidence step is still the design-study experiment:
 - later-day resumption
 
 P0-w only ensures that the Commonline condition can use a real task-specific silent worker without weakening the authority boundary.
+
+
+## P0-y pilot context bound
+
+P0-y freezes the first pilot at a 4096-token Ollama context. The same value is used during local qualification and live CommonLine inference so model memory behavior is part of the registered condition rather than an Ollama default.
