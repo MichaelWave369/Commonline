@@ -865,3 +865,37 @@ See [HUMAN_PILOT_P0X.md](HUMAN_PILOT_P0X.md) and [../experiments/p0x/README.md](
 The checked-in registration is a template, not a completed preregistration. The exact two matched tasks and exact Ollama model must be filled and validated before pair 01 begins.
 
 P0-x produces no participant result and makes no product-value claim by itself. Six pairs remain an exploratory learning pilot rather than population-level inference.
+
+
+## P0-y — pilot launch qualification
+
+P0-y freezes the concrete first pilot configuration without collecting participant evidence.
+
+Implemented:
+
+- exact matched task A: workshop check-in workflow choice
+- exact matched task B: equipment checkout workflow choice
+- identical artifact shape and six-constraint workload across both tasks
+- candidate worker tag `qwen3.6:latest`
+- candidate status `qualification-pending`
+- local Ollama model-list verification
+- exact installed model digest capture
+- both frozen task briefs exercised through bounded JSON chat qualification
+- `stream=false`
+- `think=false`
+- `format=json`
+- no tools field
+- 120-second maximum qualification latency per task
+- SHA-256 fingerprint over each registered task definition
+- qualification receipt with model digest, task hashes, request hashes, latency, and bounded-output metadata
+- launch finalizer that embeds the receipt and model digest
+- launch validation refuses stale task receipts
+- CI uses a fake Ollama provider; CI does not contact a real model
+
+See [PILOT_LAUNCH_P0Y.md](PILOT_LAUNCH_P0Y.md).
+
+### P0-y boundary
+
+The checked-in candidate is not launch-ready. The qualifier must run on the actual local Ollama machine that will serve the pilot.
+
+No room, media, authority, protocol, or SQLite behavior changes in P0-y.
