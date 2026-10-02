@@ -96,10 +96,18 @@ describe("P0-w silent worker boundary", () => {
       content: work.prompt
     });
 
-    const serialized = JSON.stringify(payload);
-    expect(serialized).not.toContain("resumeDelta");
-    expect(serialized).not.toContain("room history");
-    expect(serialized).not.toContain("transcript");
+    // The fixed system instruction names forbidden context classes so the
+    // model knows what it must not claim to have seen. Prove data minimization
+    // structurally instead of banning those policy words from the request.
+    expect(Object.keys(payload).sort()).toEqual(
+      ["format", "messages", "model", "stream", "think"].sort()
+    );
+    expect(payload.messages.map((message) => message.role)).toEqual([
+      "system",
+      "user"
+    ]);
+    expect(payload.messages[1]?.content).toBe(work.prompt);
+    expect(payload.messages[0]?.content).not.toContain(work.prompt);
 
     expect(artifact.title).toBe("Pilot-specific comparison");
     expect(artifact.body).toContain("Option A");
