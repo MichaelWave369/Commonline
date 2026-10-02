@@ -155,4 +155,4 @@ Synthetic fixtures are rejected as human evidence by default.
 
 ## License
 
-No open-source license has been selected yet. Until one is added, normal copyright rules apply.
+Commonline is released under the [MIT License](LICENSE).
