@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   mkdirSync,
   readFileSync,
@@ -7,6 +6,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  registrationFingerprint,
   validateRegistration
 } from "./p0x-pilot.mjs";
 
@@ -33,14 +33,6 @@ function readJson(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n", "utf8");
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-export function registrationFingerprint(registration) {
-  return sha256(JSON.stringify(registration));
 }
 
 function scoreDraft(registration) {
