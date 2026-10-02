@@ -133,3 +133,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-t two-human end-to-end experience acceptance: live media + cue + concurrent silent work + explicit acceptance + selective resumption
 
 - P0-u explicit external-effect firewall: accepted artifacts remain inert without exact execution authority
+
+- P0-v technical governance closure matrix: ungranted speaking, history replay, delegation, and external effects fail closed
