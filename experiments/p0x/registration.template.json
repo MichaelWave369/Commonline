@@ -97,7 +97,8 @@
     "model": "",
     "endpoint": "http://127.0.0.1:11434",
     "tools": false,
-    "inputScope": "work-prompt-only"
+    "inputScope": "work-prompt-only",
+    "maxQualificationLatencyMs": 120000
   },
   "governanceEvidence": {
     "passed": true,
