@@ -8,9 +8,14 @@ export interface PilotTlsConfig {
   pfxPath?: string;
 }
 
+type ReadBinaryFile = (path: string) => Buffer;
+
+const readBinaryFile: ReadBinaryFile = (path) =>
+  readFileSync(path);
+
 export function pilotTlsConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-  readFile: typeof readFileSync = readFileSync
+  readFile: ReadBinaryFile = readBinaryFile
 ): PilotTlsConfig {
   const pfxPath = env.COMMONLINE_TLS_PFX_FILE?.trim();
   if (!pfxPath) {
