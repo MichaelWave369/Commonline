@@ -55,7 +55,7 @@ If that does not improve concurrent work and resumption compared with an ordinar
 
 ## Repository status
 
-This repository is at the **P0 prototype** stage. P0-w makes the silent-worker path pilot-capable without widening authority: CI keeps the deterministic mock, while an explicitly configured local Ollama worker may produce task-specific proposed artifacts from the bounded work prompt only.
+This repository is at the **P0 prototype** stage. P0-x packages the remaining human-value evidence step: a six-pair, matched-task, counterbalanced CommonLine-vs-voice-plus-notes pilot with launch registration, pseudonymous pair evidence, synthetic-data separation, and machine-checkable descriptive gates.
 
 The initial design study is preserved in [docs/design/Commonline_Design_Study_v0.1.md](docs/design/Commonline_Design_Study_v0.1.md), together with its checker execution log.
 
@@ -98,7 +98,7 @@ Commonline/
 
 ## Development
 
-The current executable rung is P0-w: the silent worker is selected explicitly as deterministic `mock` or loopback-only `ollama-local`. The provider receives only the bounded work prompt, has no tools, exposes its active profile to participants, and still returns only a proposal behind the existing acceptance boundary. The wire remains `p0-v.1`; the physical SQLite layout remains `p0-q.1`.
+The current evidence rung is P0-x: the technical P0 prototype remains on wire `p0-v.1` / storage `p0-q.1`, while the human pilot protocol, launch registration, pair-result validation, counterbalancing, and descriptive gate calculations are frozen before data collection. The checked-in registration template is intentionally not launch-ready until the exact matched tasks and local model are registered.
 
 ```bash
 npm install
@@ -129,7 +129,19 @@ Join as stable Participant
 → Reconnect without inventing another participant
 ```
 
-See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md), and [docs/GOVERNANCE_CLOSURE_P0V.md](docs/GOVERNANCE_CLOSURE_P0V.md), and [docs/PILOT_WORKER_P0W.md](docs/PILOT_WORKER_P0W.md).
+See [docs/MVP.md](docs/MVP.md), [docs/WIRE_FREEZE_P0D.md](docs/WIRE_FREEZE_P0D.md), [docs/PERSISTENCE_P0E.md](docs/PERSISTENCE_P0E.md), [docs/IDENTITY_AUTHORITY_P0F.md](docs/IDENTITY_AUTHORITY_P0F.md), and [docs/MEDIA_P0G.md](docs/MEDIA_P0G.md), and [docs/MEDIA_SESSION_P0H.md](docs/MEDIA_SESSION_P0H.md), and [docs/MULTIPARTY_P0I.md](docs/MULTIPARTY_P0I.md), and [docs/SFU_P0J.md](docs/SFU_P0J.md), and [docs/MEDIA_SOURCE_POLICY_P0K.md](docs/MEDIA_SOURCE_POLICY_P0K.md), and [docs/MEDIA_ACCEPTANCE_P0L.md](docs/MEDIA_ACCEPTANCE_P0L.md), and [docs/AGENT_VOICE_AUTHORITY_P0M.md](docs/AGENT_VOICE_AUTHORITY_P0M.md), and [docs/LOCAL_AGENT_VOICE_P0N.md](docs/LOCAL_AGENT_VOICE_P0N.md), and [docs/ATTENTION_LEASE_P0O.md](docs/ATTENTION_LEASE_P0O.md), and [docs/GOVERNED_LISTENING_P0P.md](docs/GOVERNED_LISTENING_P0P.md), and [docs/EXPLICIT_EXCHANGE_P0Q.md](docs/EXPLICIT_EXCHANGE_P0Q.md), and [docs/RESUMPTION_P0R.md](docs/RESUMPTION_P0R.md), and [docs/HISTORY_ISOLATION_P0S.md](docs/HISTORY_ISOLATION_P0S.md), and [docs/EXPERIENCE_PROOF_P0T.md](docs/EXPERIENCE_PROOF_P0T.md), and [docs/EXTERNAL_EFFECT_FIREWALL_P0U.md](docs/EXTERNAL_EFFECT_FIREWALL_P0U.md), and [docs/GOVERNANCE_CLOSURE_P0V.md](docs/GOVERNANCE_CLOSURE_P0V.md), and [docs/PILOT_WORKER_P0W.md](docs/PILOT_WORKER_P0W.md), and [docs/HUMAN_PILOT_P0X.md](docs/HUMAN_PILOT_P0X.md).
+
+## Human pilot tooling
+
+P0-x pilot templates live under `experiments/p0x/`.
+
+```bash
+npm run pilot:p0:validate-registration -- registration.json --launch-ready
+npm run pilot:p0:validate-result -- pair-01.json --registration registration.json
+npm run pilot:p0:summarize -- registration.json pair-01.json pair-02.json pair-03.json pair-04.json pair-05.json pair-06.json
+```
+
+Synthetic fixtures are rejected as human evidence by default.
 
 ## Working name
 
