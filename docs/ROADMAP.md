@@ -137,3 +137,5 @@ The source taxonomy is intentionally ahead of feature execution: shared music, a
 - P0-v technical governance closure matrix: ungranted speaking, history replay, delegation, and external effects fail closed
 
 - P0-w pilot silent-worker boundary: deterministic CI mock plus explicit loopback-only task-specific local inference
+
+- P0-x registered human-pilot evidence kit: six-pair matched comparison, counterbalanced assignment, later-day resumption, validated pseudonymous evidence, and descriptive candidate gates

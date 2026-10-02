@@ -1,0 +1,52 @@
+{
+  "schema": "p0-x.pair-result.1",
+  "evidenceClass": "human-pilot",
+  "pilotId": "commonline-p0-pilot-001",
+  "pairId": "pair-01",
+  "sequenceId": "A",
+  "conditions": {
+    "commonline": {
+      "taskId": "task-a",
+      "episodeDate": "YYYY-MM-DD",
+      "episode": {
+        "resultArrivedBeforeEnd": false,
+        "resultUsedBeforeEnd": false
+      },
+      "resumption": {
+        "resumedOn": "YYYY-MM-DD",
+        "reconstructionSeconds": 0,
+        "corrections": 0
+      },
+      "fidelity": {
+        "criticalFalseApprovals": 0,
+        "lesserMistakesObserved": 0,
+        "lesserMistakesCorrected": 0
+      },
+      "attention": {
+        "acceptableDistraction": false,
+        "silenceStopControlsOk": false
+      },
+      "artifactScores": {
+        "task-fit": 1,
+        "correctness": 1,
+        "actionability": 1
+      }
+    },
+    "baseline": {
+      "taskId": "task-b",
+      "episodeDate": "YYYY-MM-DD",
+      "resumption": {
+        "resumedOn": "YYYY-MM-DD",
+        "reconstructionSeconds": 0,
+        "corrections": 0
+      },
+      "artifactScores": {
+        "task-fit": 1,
+        "correctness": 1,
+        "actionability": 1
+      }
+    }
+  },
+  "preference": "no-preference",
+  "protocolDeviations": []
+}

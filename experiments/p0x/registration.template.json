@@ -1,0 +1,124 @@
+{
+  "schema": "p0-x.registration.1",
+  "evidenceClass": "human-pilot",
+  "status": "draft-task-and-model-registration-pending",
+  "pilotId": "commonline-p0-pilot-001",
+  "protocol": {
+    "pairCount": 6,
+    "tasksPerPair": 2,
+    "episodeMinutes": 20,
+    "resumeTiming": "later-day",
+    "baseline": "voice-plus-shared-notes"
+  },
+  "counterbalance": {
+    "plannedPairsPerSequence": 3,
+    "sequences": [
+      {
+        "id": "A",
+        "assignments": [
+          {
+            "period": 1,
+            "condition": "commonline",
+            "taskId": "task-a"
+          },
+          {
+            "period": 2,
+            "condition": "baseline",
+            "taskId": "task-b"
+          }
+        ]
+      },
+      {
+        "id": "B",
+        "assignments": [
+          {
+            "period": 1,
+            "condition": "baseline",
+            "taskId": "task-a"
+          },
+          {
+            "period": 2,
+            "condition": "commonline",
+            "taskId": "task-b"
+          }
+        ]
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "taskId": "task-a",
+      "title": "",
+      "brief": "",
+      "matchedRationale": ""
+    },
+    {
+      "taskId": "task-b",
+      "title": "",
+      "brief": "",
+      "matchedRationale": ""
+    }
+  ],
+  "artifactScoring": {
+    "rubricId": "p0-x-artifact-rubric-v1",
+    "dimensions": [
+      {
+        "id": "task-fit",
+        "description": "How directly the artifact addresses the assigned deliverable and constraints.",
+        "min": 1,
+        "max": 5
+      },
+      {
+        "id": "correctness",
+        "description": "How free the artifact is from material factual, logical, or requirement errors within the task.",
+        "min": 1,
+        "max": 5
+      },
+      {
+        "id": "actionability",
+        "description": "How usable the artifact is without substantial additional reconstruction or rewriting.",
+        "min": 1,
+        "max": 5
+      }
+    ]
+  },
+  "retention": {
+    "audioRecorded": false,
+    "transcriptRetained": false,
+    "structuredMetricsRetained": true,
+    "acceptedArtifactsRetained": true,
+    "baselineNotesRetainedThroughResumption": true
+  },
+  "budget": {
+    "maxExternalSpendUsd": 0
+  },
+  "worker": {
+    "mode": "ollama-local",
+    "model": "",
+    "endpoint": "http://127.0.0.1:11434",
+    "tools": false,
+    "inputScope": "work-prompt-only"
+  },
+  "governanceEvidence": {
+    "passed": true,
+    "sourceRef": "github-actions:MichaelWave369/Commonline:36945219172"
+  },
+  "thresholds": {
+    "usefulConcurrentPairs": 4,
+    "resumptionBetterPairs": 4,
+    "preferenceCommonlinePairs": 4,
+    "criticalFalseApprovalsMax": 0
+  },
+  "operationalDefinitions": {
+    "usefulConcurrentResult": "A Commonline artifact arrives before the 20-minute episode ends and the pair uses it in the task before the episode ends.",
+    "reconstructionTime": "Whole seconds from resumption start until the pair states that it has enough task context to continue. Commonline is better only when its time is strictly lower than the matched baseline.",
+    "criticalFalseApproval": "Durable Commonline state represents an approval or accepted outcome that neither participant actually granted.",
+    "acceptableDistraction": "The pair reports the Commonline condition as acceptably non-disruptive and successfully operates the available silence/stop controls.",
+    "preference": "After completing and resuming both matched conditions, the pair selects Commonline, baseline, or no preference for another comparable task."
+  },
+  "notes": [
+    "Protocol shape and candidate thresholds come from the v0.1 design study.",
+    "The 3/3 sequence split, reconstruction stopwatch rule, artifact rubric, and attention all-pairs gate are P0-x operationalizations frozen before data collection.",
+    "Fill both task definitions and the exact local model, then change status to launch-ready only after npm run pilot:p0:validate-registration -- <file> --launch-ready passes."
+  ]
+}

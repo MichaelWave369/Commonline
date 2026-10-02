@@ -830,3 +830,38 @@ See [PILOT_WORKER_P0W.md](PILOT_WORKER_P0W.md).
 ### P0-w boundary
 
 P0-w does not claim that any model is useful enough for Commonline and does not complete the P0 pilot. It makes the Commonline condition capable of producing task-specific work under the existing authority boundaries so the registered human comparison can be run next.
+
+
+## P0-x — human pilot evidence kit
+
+P0-x freezes how the remaining P0 human-value claims will be measured before participant data is collected.
+
+Implemented:
+
+- six-pair exploratory pilot shape from the design study
+- two matched tasks per pair
+- twenty-minute episodes
+- ordinary voice + shared notes baseline
+- later-day resumption
+- 3/3 counterbalanced sequence operationalization
+- each registered task appears under each condition across the pilot
+- launch registration validator
+- exact local worker/model registration requirement
+- retention and budget registration
+- shared 1–5 artifact rubric under both conditions
+- stopwatch-based reconstruction-time operationalization
+- pseudonymous pair result format
+- useful-result, resumption, preference, fidelity, attention, and governance gate calculations
+- synthetic-vs-human evidence classes
+- synthetic evidence refused by default
+- incomplete pilot results cannot pass candidate gates
+- machine-readable summary with descriptive counts and means only
+- root CI now runs P0-x evidence-tool tests
+
+See [HUMAN_PILOT_P0X.md](HUMAN_PILOT_P0X.md) and [../experiments/p0x/README.md](../experiments/p0x/README.md).
+
+### P0-x boundary
+
+The checked-in registration is a template, not a completed preregistration. The exact two matched tasks and exact Ollama model must be filled and validated before pair 01 begins.
+
+P0-x produces no participant result and makes no product-value claim by itself. Six pairs remain an exploratory learning pilot rather than population-level inference.
