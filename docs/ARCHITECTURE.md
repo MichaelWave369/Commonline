@@ -526,3 +526,30 @@ The proof executor is process-local and does not contact another principal or ex
 Room membership, `READ_ROOM_STATE`, `SUBMIT_WORK`, `ACCEPT_OUTCOME`, speaking authority, and execution authority do not imply `DELEGATE_CONTEXT`.
 
 P0 issues no delegation grants, so the normal runtime path fails closed with `NOT_AUTHORIZED`.
+
+
+## P0-w pilot worker capability plane
+
+P0-w makes the silent-worker implementation selectable without changing Commonline authority semantics:
+
+```text
+SUBMIT_WORK grant
+      ↓
+bounded WorkItem.prompt
+      ↓
+SilentAgent provider seam
+      ├── mock
+      └── ollama-local
+              ↓
+       one proposed Artifact
+              ↓
+       existing ACCEPT_OUTCOME boundary
+```
+
+The local inference provider receives only the explicit work prompt. It is not passed room state, transcripts, resume history, grants, media state, or tools.
+
+The Ollama adapter accepts loopback endpoints only and refuses redirects. Provider failure produces a failed work status and no proposal.
+
+Worker configuration is ephemeral service capability, not durable room truth. The server exposes a non-secret worker profile through its public health surface, and the browser displays that profile to participants so the processing boundary is visible before a pilot session.
+
+P0-w does not change the Commonline wire or SQLite layout.
