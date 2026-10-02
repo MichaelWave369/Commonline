@@ -47,3 +47,15 @@ npm run pilot:p0:summarize -- pilot-local/registration.json pilot-local/pair-01.
 ```
 
 Do not change a measured value merely to satisfy a gate. The entire point of this directory is to make an inconvenient result remain inconvenient.
+
+
+## Active launch candidate
+
+P0-x defines the evidence format. P0-y freezes and qualifies the concrete first run.
+
+See:
+
+```text
+../p0y/registration.candidate.json
+../../docs/PILOT_LAUNCH_P0Y.md
+```
