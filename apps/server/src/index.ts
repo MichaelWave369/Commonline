@@ -30,6 +30,10 @@ import { AgentVoiceRuntime } from "./agentVoiceRuntime";
 import { ConversationExchangeRegistry } from "./conversationExchangeRegistry";
 import { EphemeralWorkPlane } from "./ephemeralWork";
 import {
+  LocalDelegationProofExecutor,
+  requestContextDelegation
+} from "./contextDelegationRuntime";
+import {
   LocalProofEffectExecutor,
   requestExternalEffect
 } from "./externalEffectRuntime";
@@ -69,6 +73,7 @@ const service = new RoomService(
 );
 const workPlane = new EphemeralWorkPlane();
 const externalEffectExecutor = new LocalProofEffectExecutor();
+const contextDelegationExecutor = new LocalDelegationProofExecutor();
 const agent = new MockSilentAgent("Vessie");
 const voiceRenderer = createLocalVoiceRenderer();
 const speechRecognizer = createLocalSpeechRecognizer();
@@ -95,6 +100,7 @@ const httpServer = createServer((request, response) => {
         governedListening: "bounded-push-share-p0-p",
         explicitExchangeBinding: "heard-plus-attention-p0-q",
         externalEffectFirewall: "local-proof-sink-p0-u",
+        contextDelegationFirewall: "local-delegation-proof-sink-p0-v",
         speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })
@@ -537,6 +543,23 @@ function parseMessage(raw: RawData): ClientMessage | null {
     }
 
     if (
+      parsed.type === "request_context_delegation" &&
+      typeof parsed.delegationRequestId === "string" &&
+      parsed.delegationRequestId.length > 0 &&
+      typeof parsed.artifactId === "string" &&
+      parsed.artifactId.length > 0 &&
+      typeof parsed.authorityGrantId === "string" &&
+      parsed.authorityGrantId.length > 0 &&
+      parsed.kind === "accepted-artifact-summary" &&
+      parsed.target === "local-delegation-proof-sink" &&
+      parsed.purpose === "comparison-review" &&
+      Number.isInteger(parsed.baseVersion) &&
+      Number(parsed.baseVersion) >= 0
+    ) {
+      return parsed as ClientMessage;
+    }
+
+    if (
       parsed.type === "grant_listening_share" &&
       typeof parsed.agentParticipantId === "string" &&
       parsed.agentParticipantId.length > 0
@@ -919,6 +942,36 @@ wss.on("connection", (socket) => {
         actorParticipantId: session.participantId,
         message,
         executor: externalEffectExecutor
+      });
+
+      send(socket, result.status);
+      if (!result.ok) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: result.code,
+          message: result.message,
+          room
+        });
+      }
+      return;
+    }
+
+    if (message.type === "request_context_delegation") {
+      const room = service.getRoom(session.roomId);
+      if (!room) {
+        reject(socket, {
+          requestId: message.requestId,
+          code: "ROOM_NOT_FOUND",
+          message: "Room no longer exists."
+        });
+        return;
+      }
+
+      const result = await requestContextDelegation({
+        room,
+        actorParticipantId: session.participantId,
+        message,
+        executor: contextDelegationExecutor
       });
 
       send(socket, result.status);
