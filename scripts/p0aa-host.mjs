@@ -35,21 +35,40 @@ export function detectLanIpv4(
   interfaces = networkInterfaces()
 ) {
   const candidates = [];
+  const virtualName =
+    /virtual|vbox|vmware|vethernet|hyper-v|tailscale|wsl|docker|loopback/i;
 
-  for (const addresses of Object.values(interfaces)) {
+  for (const [name, addresses] of Object.entries(interfaces)) {
     for (const address of addresses ?? []) {
       if (
         address.family === "IPv4" &&
         !address.internal &&
         address.address !== "0.0.0.0"
       ) {
-        candidates.push(address.address);
+        candidates.push({
+          address: address.address,
+          virtual: virtualName.test(name)
+        });
       }
     }
   }
 
-  const privateAddress = candidates.find(isPrivateIpv4);
-  return privateAddress ?? candidates[0] ?? null;
+  const preferredPrivate = candidates.find(
+    (candidate) =>
+      !candidate.virtual &&
+      isPrivateIpv4(candidate.address)
+  );
+  if (preferredPrivate) return preferredPrivate.address;
+
+  const anyPrivate = candidates.find(
+    (candidate) => isPrivateIpv4(candidate.address)
+  );
+  if (anyPrivate) return anyPrivate.address;
+
+  const physical = candidates.find(
+    (candidate) => !candidate.virtual
+  );
+  return physical?.address ?? candidates[0]?.address ?? null;
 }
 
 export function buildPilotHostEnv(input) {
