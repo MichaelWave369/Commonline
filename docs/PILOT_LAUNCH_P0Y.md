@@ -108,7 +108,10 @@ It then runs both frozen task briefs through a bounded chat request using:
 {
   "stream": false,
   "think": false,
-  "format": "json"
+  "format": "json",
+  "options": {
+    "num_ctx": 4096
+  }
 }
 ```
 
@@ -137,6 +140,7 @@ The receipt captures:
 - exact model digest
 - qualification timestamp
 - no-tools / prompt-only contract
+- frozen `num_ctx=4096`
 - each task's SHA-256 fingerprint
 - request SHA-256
 - wall-clock latency
@@ -221,6 +225,7 @@ COMMONLINE_AGENT_MODE=ollama-local
 COMMONLINE_OLLAMA_MODEL=qwen3.6:latest
 COMMONLINE_OLLAMA_URL=http://127.0.0.1:11434
 COMMONLINE_AGENT_TIMEOUT_MS=120000
+COMMONLINE_AGENT_NUM_CTX=4096
 ```
 
 Before pair 01 begins:
@@ -265,3 +270,8 @@ storage = p0-q.1
 ```
 
 P0-y freezes and qualifies the experiment configuration. Human evidence still begins only when pair 01 actually runs.
+
+
+## Context-size rationale
+
+The 4096-token context is intentionally bounded for this pilot. Both frozen tasks and the required compact artifact fit comfortably inside that window. Freezing the value avoids allowing a large local model to inherit an unexpectedly large context window that changes memory pressure or latency between qualification and the live run.
