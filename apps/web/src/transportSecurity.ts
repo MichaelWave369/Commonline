@@ -46,6 +46,23 @@ export function resolveCommonlineWebSocketUrl(input: {
   return resolved.toString();
 }
 
+export function resolveCommonlineHealthUrl(input: {
+  pageUrl: string;
+  configuredUrl?: string;
+}) {
+  const socketUrl = new URL(
+    resolveCommonlineWebSocketUrl(input)
+  );
+
+  socketUrl.protocol =
+    socketUrl.protocol === "wss:" ? "https:" : "http:";
+  socketUrl.pathname = "/health";
+  socketUrl.search = "";
+  socketUrl.hash = "";
+
+  return socketUrl.toString();
+}
+
 export function mediaContextLabel(input: {
   pageUrl: string;
   secureContext: boolean;
