@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   buildPilotHostEnv,
-  detectLanIpv4
+  detectLanIpv4,
+  verifyRegisteredWorkerDigest
 } from "../scripts/p0aa-host.mjs";
 import {
   finalizeRegistration
@@ -164,5 +165,69 @@ test("P0-aa requires a PFX passphrase before secure pilot hosting", () => {
         parentEnv: {}
       }),
     /COMMONLINE_TLS_PFX_PASSPHRASE/
+  );
+});
+
+
+test("P0-aa verifies the installed Ollama digest before hosting", async () => {
+  const registration = launchRegistration();
+  const fetcher = async () =>
+    new Response(
+      JSON.stringify({
+        models: [
+          {
+            name: registration.worker.model,
+            model: registration.worker.model,
+            digest: registration.worker.modelDigest
+          }
+        ]
+      }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      }
+    );
+
+  const verified = await verifyRegisteredWorkerDigest(
+    registration,
+    fetcher
+  );
+
+  assert.equal(
+    verified.digest,
+    registration.worker.modelDigest
+  );
+});
+
+test("P0-aa fails closed when the installed Ollama digest drifted", async () => {
+  const registration = launchRegistration();
+  const fetcher = async () =>
+    new Response(
+      JSON.stringify({
+        models: [
+          {
+            name: registration.worker.model,
+            model: registration.worker.model,
+            digest: "0".repeat(64)
+          }
+        ]
+      }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      }
+    );
+
+  await assert.rejects(
+    () =>
+      verifyRegisteredWorkerDigest(
+        registration,
+        fetcher
+      ),
+    /model digest drift/
   );
 });
