@@ -136,4 +136,14 @@ describe("P0-w silent worker boundary", () => {
       })
     ).toThrow("COMMONLINE_OLLAMA_MODEL is required");
   });
+
+  it("fails fast on an invalid provider timeout", () => {
+    expect(() =>
+      createSilentAgent({
+        mode: "ollama-local",
+        ollamaModel: "pilot-model",
+        timeoutMs: Number.NaN
+      })
+    ).toThrow("agent timeout must be between");
+  });
 });
