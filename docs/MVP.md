@@ -924,3 +924,33 @@ See [PILOT_EXECUTION_P0Z.md](PILOT_EXECUTION_P0Z.md).
 ### P0-z boundary
 
 P0-z creates no participant evidence and changes no CommonLine runtime behavior. It freezes execution materials so pair runs do not improvise assignments, tasks, or worker configuration.
+
+
+## P0-aa — secure two-device pilot host
+
+P0-aa closes the final infrastructure gap between the frozen P0 execution pack and a real two-human pilot.
+
+Implemented:
+
+- optional PFX-backed HTTPS/WSS server transport
+- secure Vite LAN binding only when explicitly enabled
+- Windows short-lived pilot certificate bootstrap
+- host certificate trust plus public CER export for participant B
+- registration-bound host launcher
+- live Ollama model-digest verification before host startup
+- registered model, timeout, and numCtx injected from the finalized launch registration
+- RFC1918 LAN-address requirement
+- physical LAN adapter preference over common virtual/VPN interfaces
+- mediasoup wildcard bind with explicit LAN announced address
+- participant-A localhost HTTPS URL
+- participant-B hostname HTTPS URL
+- transport disclosure through /health
+- CI coverage for TLS configuration, secure Vite exposure, LAN detection, host-env binding, and model-digest drift
+
+See [PILOT_HOST_P0AA.md](PILOT_HOST_P0AA.md).
+
+### P0-aa boundary
+
+P0-aa does not weaken transport security, expose Ollama to the LAN, alter authority, modify the CommonLine wire/storage schemas, or create human evidence.
+
+It is a LAN pilot host, not a production/public deployment mechanism.

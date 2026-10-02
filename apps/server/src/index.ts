@@ -1,4 +1,5 @@
-import { createServer } from "node:http";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createSilentAgent } from "@commonline/agent-runtime";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
@@ -58,6 +59,7 @@ import { ListeningShareRuntime } from "./listeningShareRuntime";
 import { RoomService } from "./roomService";
 import { buildRtcConfig } from "./rtcConfig";
 import { SessionRegistry } from "./sessionRegistry";
+import { pilotTlsConfigFromEnv } from "./pilotTls";
 import {
   COMMONLINE_STORAGE_SCHEMA_VERSION,
   SQLiteRoomStore
@@ -92,7 +94,9 @@ const sfu = await MediasoupSfuAdapter.create(
   mediasoupConfigFromEnv()
 );
 
-const httpServer = createServer((request, response) => {
+const tls = pilotTlsConfigFromEnv();
+
+const requestListener: import("node:http").RequestListener = (request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, {
       "content-type": "application/json",
@@ -118,14 +122,19 @@ const httpServer = createServer((request, response) => {
         contextDelegationFirewall: "local-delegation-proof-sink-p0-v",
         silentWorker: agent.profile,
         speechRecognizer: speechRecognizer.status(),
-        sfu: sfu.status()
+        sfu: sfu.status(),
+        transport: tls.enabled ? "https-wss" : "http-ws"
       })
     );
     return;
   }
   response.writeHead(404);
   response.end();
-});
+};
+
+const httpServer = tls.enabled
+  ? createHttpsServer(tls.options ?? {}, requestListener)
+  : createHttpServer(requestListener);
 
 const wss = new WebSocketServer({ server: httpServer });
 const roomSockets = new Map<string, Set<WebSocket>>();
@@ -2599,6 +2608,6 @@ process.once("SIGTERM", () => shutdown("SIGTERM"));
 
 httpServer.listen(port, () => {
   console.log(
-    `Commonline room service listening on http://localhost:${port} (${COMMONLINE_WIRE_SCHEMA_VERSION}, storage ${COMMONLINE_STORAGE_SCHEMA_VERSION})`
+    `Commonline room service listening on ${tls.protocol}://localhost:${port} (${COMMONLINE_WIRE_SCHEMA_VERSION}, storage ${COMMONLINE_STORAGE_SCHEMA_VERSION})`
   );
 });
