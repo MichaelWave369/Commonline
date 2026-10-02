@@ -168,6 +168,26 @@ test("P0-z result drafts cannot validate as observed evidence before humans fill
   }
 });
 
+test("P0-z result evidence rejects a mismatched launch registration hash", () => {
+  const registration = launchRegistration();
+  const pack = buildExecutionPack(registration);
+  const draft = structuredClone(
+    pack.pairs[0].resultDraft
+  );
+
+  draft.registrationHash = "0".repeat(64);
+
+  const validation = validatePairResult(
+    draft,
+    registration
+  );
+  assert.equal(validation.ok, false);
+  assert.match(
+    validation.errors.join(" "),
+    /registrationHash does not match/
+  );
+});
+
 test("P0-z refuses a qualification-pending registration", () => {
   const candidate = JSON.parse(
     readFileSync(
