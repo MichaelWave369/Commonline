@@ -235,6 +235,13 @@ export function validateRegistration(registration, options = {}) {
   if (worker.inputScope !== "work-prompt-only") {
     fail(errors, "worker.inputScope must be work-prompt-only.");
   }
+  if (
+    !Number.isInteger(worker.numCtx) ||
+    worker.numCtx < 2_048 ||
+    worker.numCtx > 32_768
+  ) {
+    fail(errors, "worker.numCtx must be an integer between 2048 and 32768.");
+  }
 
   if (
     !Number.isFinite(worker.maxQualificationLatencyMs) ||
@@ -292,6 +299,9 @@ export function validateRegistration(registration, options = {}) {
       }
       if (receipt.modelDigest !== worker.modelDigest) {
         fail(errors, "worker.qualificationReceipt.modelDigest must match worker.modelDigest.");
+      }
+      if (receipt.numCtx !== worker.numCtx) {
+        fail(errors, "worker.qualificationReceipt.numCtx must match worker.numCtx.");
       }
       if (!Array.isArray(receipt.tasks) || receipt.tasks.length !== 2) {
         fail(errors, "worker.qualificationReceipt.tasks must contain exactly two task receipts.");
