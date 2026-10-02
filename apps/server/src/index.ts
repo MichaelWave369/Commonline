@@ -81,6 +81,9 @@ const agent = createSilentAgent({
   ollamaBaseUrl: process.env.COMMONLINE_OLLAMA_URL,
   timeoutMs: process.env.COMMONLINE_AGENT_TIMEOUT_MS
     ? Number(process.env.COMMONLINE_AGENT_TIMEOUT_MS)
+    : undefined,
+  ollamaNumCtx: process.env.COMMONLINE_AGENT_NUM_CTX
+    ? Number(process.env.COMMONLINE_AGENT_NUM_CTX)
     : undefined
 });
 const voiceRenderer = createLocalVoiceRenderer();
