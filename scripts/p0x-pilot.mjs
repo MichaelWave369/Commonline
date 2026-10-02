@@ -62,6 +62,12 @@ export function taskFingerprint(task) {
     .digest("hex");
 }
 
+export function registrationFingerprint(registration) {
+  return createHash("sha256")
+    .update(JSON.stringify(registration))
+    .digest("hex");
+}
+
 function sha256Digest(value) {
   return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
 }
@@ -401,6 +407,13 @@ export function validatePairResult(result, registration) {
   if (registration) {
     if (result.pilotId !== registration.pilotId) {
       fail(errors, "pilotId does not match the registration.");
+    }
+    if (
+      result.registrationHash !== undefined &&
+      result.registrationHash !==
+        registrationFingerprint(registration)
+    ) {
+      fail(errors, "registrationHash does not match the launch registration.");
     }
     const sequence = registration.counterbalance?.sequences?.find(
       (candidate) => candidate.id === result.sequenceId
