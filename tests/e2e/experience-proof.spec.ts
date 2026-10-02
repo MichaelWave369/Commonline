@@ -82,6 +82,12 @@ test("P0-t proves concurrent work, explicit acceptance, and selective resumption
     const bob = await newHuman(browser, "Bob");
     humans.push(bob);
 
+    const workerProfile = alice.page.getByTestId("silent-worker-profile");
+    await expect(workerProfile).toBeVisible();
+    await expect(workerProfile).toContainText("MODE MOCK");
+    await expect(workerProfile).toContainText("TOOLS OFF");
+    await expect(workerProfile).toContainText("INPUT WORK-PROMPT-ONLY");
+
     await joinGroup(alice);
     await joinGroup(bob);
 

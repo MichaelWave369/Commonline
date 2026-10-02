@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { MockSilentAgent } from "@commonline/agent-runtime";
+import { createSilentAgent } from "@commonline/agent-runtime";
 import {
   COMMONLINE_WIRE_SCHEMA_VERSION,
   type AgentTurnStatusMessage,
@@ -74,7 +74,15 @@ const service = new RoomService(
 const workPlane = new EphemeralWorkPlane();
 const externalEffectExecutor = new LocalProofEffectExecutor();
 const contextDelegationExecutor = new LocalDelegationProofExecutor();
-const agent = new MockSilentAgent("Vessie");
+const agent = createSilentAgent({
+  mode: process.env.COMMONLINE_AGENT_MODE,
+  name: "Vessie",
+  ollamaModel: process.env.COMMONLINE_OLLAMA_MODEL,
+  ollamaBaseUrl: process.env.COMMONLINE_OLLAMA_URL,
+  timeoutMs: process.env.COMMONLINE_AGENT_TIMEOUT_MS
+    ? Number(process.env.COMMONLINE_AGENT_TIMEOUT_MS)
+    : undefined
+});
 const voiceRenderer = createLocalVoiceRenderer();
 const speechRecognizer = createLocalSpeechRecognizer();
 const sfu = await MediasoupSfuAdapter.create(
@@ -83,7 +91,11 @@ const sfu = await MediasoupSfuAdapter.create(
 
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" });
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store"
+    });
     response.end(
       JSON.stringify({
         ok: true,
@@ -101,6 +113,7 @@ const httpServer = createServer((request, response) => {
         explicitExchangeBinding: "heard-plus-attention-p0-q",
         externalEffectFirewall: "local-proof-sink-p0-u",
         contextDelegationFirewall: "local-delegation-proof-sink-p0-v",
+        silentWorker: agent.profile,
         speechRecognizer: speechRecognizer.status(),
         sfu: sfu.status()
       })

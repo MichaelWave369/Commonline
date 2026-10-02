@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mediaContextLabel,
+  resolveCommonlineHealthUrl,
   resolveCommonlineWebSocketUrl
 } from "./transportSecurity";
 
@@ -36,6 +37,15 @@ describe("P0-g transport security", () => {
         configuredUrl: "ws://signal.example.test:8787"
       })
     ).toThrow(/must use WSS/);
+  });
+
+  it("derives the health endpoint from the configured signaling origin", () => {
+    expect(
+      resolveCommonlineHealthUrl({
+        pageUrl: "http://127.0.0.1:5173/",
+        configuredUrl: "ws://127.0.0.1:8787"
+      })
+    ).toBe("http://127.0.0.1:8787/health");
   });
 
   it("labels localhost as a permitted secure-context exception", () => {

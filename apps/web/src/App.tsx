@@ -48,6 +48,7 @@ export function App() {
     requestedRole,
     setRequestedRole,
     room,
+    serviceProfile,
     connection,
     resumeDelta,
     lastEvent,
@@ -266,7 +267,7 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">COMMONLINE · P0-v GOVERNANCE CLOSURE MATRIX</div>
+          <div className="eyebrow">COMMONLINE · P0-w PILOT SILENT WORKER</div>
           <h1>{room?.purpose ?? "Let Vessie hear one bounded clip and reply only after a separate attention grant"}</h1>
         </div>
         <div className="status-row">
@@ -279,6 +280,9 @@ export function App() {
           )}
           {group.joined && (
             <Badge>GROUP {group.routerMode?.toUpperCase() ?? "MEDIA"}</Badge>
+          )}
+          {serviceProfile?.silentWorker && (
+            <Badge>WORKER {serviceProfile.silentWorker.mode.toUpperCase()}</Badge>
           )}
           {room && <Badge>{room.schemaVersion}</Badge>}
           {room && <Badge>ROOM v{room.version}</Badge>}
@@ -387,6 +391,42 @@ export function App() {
             P0-f enrollment is trust-on-first-use. Remote recovery must use localhost or WSS;
             a recovery secret should never cross plain internet WebSocket transport.
           </p>
+        </Card>
+
+        <Card data-testid="silent-worker-profile">
+          <SectionTitle>Pilot processing boundary</SectionTitle>
+          {!serviceProfile?.silentWorker ? (
+            <p className="notice">
+              Worker disclosure is unavailable. Do not begin a human pilot until the
+              processing boundary is visible.
+            </p>
+          ) : (
+            <>
+              <div className="grant-grid">
+                <Badge>MODE {serviceProfile.silentWorker.mode.toUpperCase()}</Badge>
+                <Badge>PROVIDER {serviceProfile.silentWorker.provider.toUpperCase()}</Badge>
+                <Badge>TOOLS {serviceProfile.silentWorker.tools ? "ON" : "OFF"}</Badge>
+                <Badge>
+                  INPUT {serviceProfile.silentWorker.inputScope.toUpperCase()}
+                </Badge>
+              </div>
+              {serviceProfile.silentWorker.model && (
+                <p className="muted small">
+                  Local model: <strong>{serviceProfile.silentWorker.model}</strong>
+                </p>
+              )}
+              {serviceProfile.silentWorker.endpoint && (
+                <p className="muted small">
+                  Provider endpoint: {serviceProfile.silentWorker.endpoint}
+                </p>
+              )}
+              <p className="muted small">
+                The silent worker receives only the explicitly submitted bounded work prompt.
+                It receives no room history, live audio, transcript, grants, tools, or external
+                execution authority through this provider seam.
+              </p>
+            </>
+          )}
         </Card>
       </section>
 
@@ -1837,10 +1877,10 @@ export function App() {
       </section>
 
       <footer>
-        P0-v closes the technical P0 governance matrix: speaking requires media authority,
-        first-time membership does not inherit earlier event history, onward context delegation
-        requires separate DELEGATE_CONTEXT authority, and accepted artifacts remain inert without
-        EXECUTE_EXTERNAL_EFFECT authority. P0 issues neither delegation nor execution grants.
+        P0-w makes the silent worker useful enough to enter a human pilot without widening its
+        authority. Mock mode remains the deterministic default; explicit ollama-local mode receives
+        only the bounded work prompt, exposes its provider profile to participants, uses no tools,
+        and still returns only a proposal that humans may accept or reject.
       </footer>
     </main>
   );
