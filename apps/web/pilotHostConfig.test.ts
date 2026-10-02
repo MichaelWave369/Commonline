@@ -6,7 +6,7 @@ describe("P0-aa secure LAN Vite host", () => {
     expect(
       pilotViteServerConfigFromEnv(
         {},
-        (() => Buffer.from("unused")) as typeof import("node:fs").readFileSync
+        (() => Buffer.from("unused"))
       )
     ).toEqual({
       port: 5173
@@ -19,7 +19,7 @@ describe("P0-aa secure LAN Vite host", () => {
         {
           COMMONLINE_PILOT_LAN_HOST: "true"
         },
-        (() => Buffer.from("unused")) as typeof import("node:fs").readFileSync
+        (() => Buffer.from("unused"))
       )
     ).toThrow(/COMMONLINE_TLS_PFX_FILE is required/);
   });
@@ -31,7 +31,7 @@ describe("P0-aa secure LAN Vite host", () => {
         COMMONLINE_TLS_PFX_FILE: "pilot-local/tls/commonline-pilot.pfx",
         COMMONLINE_TLS_PFX_PASSPHRASE: "secret"
       },
-      (() => Buffer.from("pfx-data")) as typeof import("node:fs").readFileSync
+      (() => Buffer.from("pfx-data"))
     );
 
     expect(config.port).toBe(5173);
