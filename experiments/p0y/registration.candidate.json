@@ -99,7 +99,8 @@
     "tools": false,
     "inputScope": "work-prompt-only",
     "maxQualificationLatencyMs": 120000,
-    "qualificationReceipt": null
+    "qualificationReceipt": null,
+    "numCtx": 4096
   },
   "governanceEvidence": {
     "passed": true,

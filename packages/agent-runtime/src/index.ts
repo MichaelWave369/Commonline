@@ -5,6 +5,7 @@ export interface SilentAgentProfile {
   provider: "deterministic-ci" | "ollama";
   model?: string;
   endpoint?: string;
+  numCtx?: number;
   tools: false;
   inputScope: "work-prompt-only";
 }
@@ -113,6 +114,7 @@ export interface OllamaLocalSilentAgentOptions {
   model: string;
   baseUrl?: string;
   timeoutMs?: number;
+  numCtx?: number;
   fetcher?: FetchLike;
 }
 
@@ -198,6 +200,7 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
   private readonly baseUrl: URL;
   private readonly model: string;
   private readonly timeoutMs: number;
+  private readonly numCtx: number;
   private readonly fetcher: FetchLike;
 
   constructor(private readonly options: OllamaLocalSilentAgentOptions) {
@@ -224,12 +227,23 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
         "P0-w agent timeout must be between 1000 and 120000 milliseconds."
       );
     }
+    this.numCtx = options.numCtx ?? 4_096;
+    if (
+      !Number.isInteger(this.numCtx) ||
+      this.numCtx < 2_048 ||
+      this.numCtx > 32_768
+    ) {
+      throw new Error(
+        "P0-w Ollama num_ctx must be an integer between 2048 and 32768."
+      );
+    }
     this.fetcher = options.fetcher ?? fetch;
     this.profile = {
       mode: "ollama-local",
       provider: "ollama",
       model: this.model,
       endpoint: this.baseUrl.origin,
+      numCtx: this.numCtx,
       tools: false,
       inputScope: "work-prompt-only"
     };
@@ -256,6 +270,9 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
             stream: false,
             think: false,
             format: "json",
+            options: {
+              num_ctx: this.numCtx
+            },
             messages: [
               {
                 role: "system",
@@ -277,8 +294,9 @@ export class OllamaLocalSilentAgent extends BaseSilentAgent {
       );
 
       if (!response.ok) {
+        const details = (await response.text()).trim();
         throw new Error(
-          `Ollama request failed with HTTP ${response.status}.`
+          `Ollama request failed with HTTP ${response.status}${details ? `: ${details}` : "."}`
         );
       }
 
@@ -314,6 +332,7 @@ export function createSilentAgent(options: {
   ollamaModel?: string;
   ollamaBaseUrl?: string;
   timeoutMs?: number;
+  ollamaNumCtx?: number;
   fetcher?: FetchLike;
 } = {}): SilentAgent {
   const mode = options.mode?.trim() || "mock";
@@ -328,6 +347,7 @@ export function createSilentAgent(options: {
       model: options.ollamaModel ?? "",
       baseUrl: options.ollamaBaseUrl,
       timeoutMs: options.timeoutMs,
+      numCtx: options.ollamaNumCtx,
       fetcher: options.fetcher
     });
   }

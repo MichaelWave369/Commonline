@@ -406,6 +406,9 @@ export function App() {
                 <Badge>MODE {serviceProfile.silentWorker.mode.toUpperCase()}</Badge>
                 <Badge>PROVIDER {serviceProfile.silentWorker.provider.toUpperCase()}</Badge>
                 <Badge>TOOLS {serviceProfile.silentWorker.tools ? "ON" : "OFF"}</Badge>
+                {serviceProfile.silentWorker.numCtx && (
+                  <Badge>CTX {serviceProfile.silentWorker.numCtx}</Badge>
+                )}
                 <Badge>
                   INPUT {serviceProfile.silentWorker.inputScope.toUpperCase()}
                 </Badge>

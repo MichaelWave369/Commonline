@@ -109,6 +109,7 @@ test("P0-y qualifies the exact registered local model against both frozen tasks"
   assert.equal(receipt.passed, true);
   assert.equal(receipt.model, "qwen3.6:latest");
   assert.equal(receipt.modelDigest, fake.digest);
+  assert.equal(receipt.numCtx, 4096);
   assert.equal(receipt.tasks.length, 2);
   assert.equal(
     receipt.tasks[0].taskHash,
@@ -129,6 +130,7 @@ test("P0-y qualifies the exact registered local model against both frozen tasks"
     assert.equal(chat.body.stream, false);
     assert.equal(chat.body.think, false);
     assert.equal(chat.body.format, "json");
+    assert.deepEqual(chat.body.options, { num_ctx: 4096 });
     assert.equal("tools" in chat.body, false);
     assert.deepEqual(
       chat.body.messages.map((message) => message.role),

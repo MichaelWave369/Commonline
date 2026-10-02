@@ -81,6 +81,7 @@ describe("P0-w silent worker boundary", () => {
       stream: boolean;
       think: boolean;
       format: string;
+      options?: { num_ctx?: number };
       tools?: unknown;
       messages: Array<{ role: string; content: string }>;
     };
@@ -89,6 +90,7 @@ describe("P0-w silent worker boundary", () => {
     expect(payload.stream).toBe(false);
     expect(payload.think).toBe(false);
     expect(payload.format).toBe("json");
+    expect(payload.options).toEqual({ num_ctx: 4096 });
     expect(payload.tools).toBeUndefined();
     expect(payload.messages).toHaveLength(2);
     expect(payload.messages[1]).toEqual({
@@ -100,7 +102,7 @@ describe("P0-w silent worker boundary", () => {
     // model knows what it must not claim to have seen. Prove data minimization
     // structurally instead of banning those policy words from the request.
     expect(Object.keys(payload).sort()).toEqual(
-      ["format", "messages", "model", "stream", "think"].sort()
+      ["format", "messages", "model", "options", "stream", "think"].sort()
     );
     expect(payload.messages.map((message) => message.role)).toEqual([
       "system",
@@ -135,6 +137,16 @@ describe("P0-w silent worker boundary", () => {
     await expect(agent.perform(work)).rejects.toThrow(
       "non-JSON artifact"
     );
+  });
+
+  it("rejects an invalid bounded Ollama context", () => {
+    expect(() =>
+      createSilentAgent({
+        mode: "ollama-local",
+        ollamaModel: "pilot-model",
+        ollamaNumCtx: 1000
+      })
+    ).toThrow("num_ctx must be an integer between");
   });
 
   it("requires an explicit local model in ollama-local mode", () => {

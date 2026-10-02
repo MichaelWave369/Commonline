@@ -86,6 +86,7 @@ function registration(overrides = {}) {
       endpoint: "http://127.0.0.1:11434",
       tools: false,
       inputScope: "work-prompt-only",
+      numCtx: 4096,
       maxQualificationLatencyMs: 120000,
       modelDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       qualificationReceipt: {
@@ -94,6 +95,7 @@ function registration(overrides = {}) {
         pilotId: "pilot-synthetic",
         model: "pilot-model",
         modelDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        numCtx: 4096,
         tasks: [
           {
             taskId: "task-a",
