@@ -503,3 +503,26 @@ The local proof executor is deliberately non-effectful outside process memory. I
 P0 does not issue `EXECUTE_EXTERNAL_EFFECT` grants. Therefore accepted artifacts remain inert by default.
 
 The effect request is ephemeral and does not mutate room state. No effect receipt is persisted in P0-u because the production path cannot become authorized yet.
+
+
+## P0-v context delegation firewall
+
+P0-v adds a separate authority boundary for onward context sharing:
+
+```text
+accepted artifact
+      +
+current room version
+      +
+exact active DELEGATE_CONTEXT grant
+      ↓
+ContextDelegationRuntime
+      ↓
+LocalDelegationProofExecutor
+```
+
+The proof executor is process-local and does not contact another principal or external service.
+
+Room membership, `READ_ROOM_STATE`, `SUBMIT_WORK`, `ACCEPT_OUTCOME`, speaking authority, and execution authority do not imply `DELEGATE_CONTEXT`.
+
+P0 issues no delegation grants, so the normal runtime path fails closed with `NOT_AUTHORIZED`.
