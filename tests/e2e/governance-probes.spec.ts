@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 interface HumanBrowser {
@@ -26,7 +28,7 @@ async function newHuman(
 
 test("P0-v closes speaking, history, delegation, and effect governance probes", async ({
   browser
-}) => {
+}, testInfo) => {
   const alice = await newHuman(browser, "Alice");
   let observer: HumanBrowser | null = null;
 
@@ -115,6 +117,52 @@ test("P0-v closes speaking, history, delegation, and effect governance probes", 
     await expect(status).toContainText("demo-marker");
     await expect(status).toContainText("local-proof-sink");
     await expect(status).toContainText("no-execution-grant");
+
+    const report = {
+      schema: "p0-v.governance-closure.1",
+      test: testInfo.title,
+      generatedAt: new Date().toISOString(),
+      probes: {
+        speaking: {
+          subject: "Late Observer",
+          expected: "blocked",
+          evidence: "group media admission disabled without SPEAK or RECEIVE_MEDIA"
+        },
+        history: {
+          subject: "Late Observer",
+          expected: "no pre-membership replay",
+          missedDurableEvents: 0
+        },
+        delegation: {
+          subject: "Alice",
+          expected: "blocked",
+          code: "NOT_AUTHORIZED",
+          target: "local-delegation-proof-sink"
+        },
+        externalEffect: {
+          subject: "Alice",
+          expected: "blocked",
+          code: "NOT_AUTHORIZED",
+          target: "local-proof-sink"
+        }
+      }
+    };
+
+    const reportPath = resolve(
+      "test-results",
+      "p0v-governance-closure.json"
+    );
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(
+      reportPath,
+      JSON.stringify(report, null, 2) + "\n",
+      "utf8"
+    );
+
+    await testInfo.attach("p0v-governance-closure", {
+      body: Buffer.from(JSON.stringify(report, null, 2)),
+      contentType: "application/json"
+    });
   } finally {
     await Promise.all([
       alice.context.close(),
