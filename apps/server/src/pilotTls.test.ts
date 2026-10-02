@@ -21,7 +21,7 @@ describe("P0-aa pilot TLS config", () => {
       ((path: string) => {
         calls.push(path);
         return Buffer.from("pfx-bytes");
-      }) as typeof import("node:fs").readFileSync
+      })
     );
 
     expect(calls).toEqual([
@@ -44,7 +44,7 @@ describe("P0-aa pilot TLS config", () => {
         {
           COMMONLINE_TLS_PFX_FILE: "empty.pfx"
         },
-        (() => Buffer.alloc(0)) as typeof import("node:fs").readFileSync
+        (() => Buffer.alloc(0))
       )
     ).toThrow(/empty PFX/);
   });
