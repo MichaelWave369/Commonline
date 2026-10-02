@@ -98,7 +98,8 @@
     "endpoint": "http://127.0.0.1:11434",
     "tools": false,
     "inputScope": "work-prompt-only",
-    "maxQualificationLatencyMs": 120000
+    "maxQualificationLatencyMs": 120000,
+    "numCtx": 4096
   },
   "governanceEvidence": {
     "passed": true,
