@@ -774,3 +774,30 @@ See [EXTERNAL_EFFECT_FIREWALL_P0U.md](EXTERNAL_EFFECT_FIREWALL_P0U.md).
 ### P0-u boundary
 
 There is still no product path for issuing `EXECUTE_EXTERNAL_EFFECT` grants. P0-u proves the firewall before CommonLine gains any real effectful adapter.
+
+
+## P0-v — governance closure matrix
+
+P0-v closes the technical governance half of the P0 exit criteria in one executable browser acceptance flow.
+
+Implemented:
+
+- late first-time observer joins after durable activity
+- observer receives current room state but zero pre-membership resume events
+- observer lacks `SPEAK` and `RECEIVE_MEDIA`, so governed group-media admission is unavailable
+- new `DELEGATE_CONTEXT` capability exists as an independently checked authority
+- P0 issues no delegation grants
+- bounded `request_context_delegation` probe targets only a process-local proof sink
+- accepted room context does not authorize onward delegation
+- exact active delegation grant is required immediately before the proof executor
+- P0-u external-effect negative control remains in the same acceptance run
+- CI emits `test-results/p0v-governance-closure.json`
+- wire advances to `p0-v.1`
+- physical SQLite layout remains `p0-q.1`
+- P0-u wire metadata migrates in place to P0-v
+
+See [GOVERNANCE_CLOSURE_P0V.md](GOVERNANCE_CLOSURE_P0V.md).
+
+### P0-v boundary
+
+No real second-agent contact, federation, external model call, messaging, payment, deployment, or device-control path is added. P0-v proves the authority firewall before P1 introduces context-limited collaboration.
