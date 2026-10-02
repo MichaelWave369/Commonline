@@ -12,10 +12,13 @@
     "dev:web": "npm run dev -w @commonline/web",
     "build": "npm run build -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
-    "test": "npm run test -ws --if-present",
+    "test": "npm run test -ws --if-present && node --test tests/p0x-pilot.test.mjs",
     "test:media-acceptance": "playwright test tests/e2e/media-acceptance.spec.ts --project=chromium",
     "test:p0-experience": "playwright test tests/e2e/experience-proof.spec.ts --project=chromium",
-    "test:p0-governance": "playwright test tests/e2e/governance-probes.spec.ts --project=chromium"
+    "test:p0-governance": "playwright test tests/e2e/governance-probes.spec.ts --project=chromium",
+    "pilot:p0:validate-registration": "node scripts/p0x-pilot.mjs validate-registration",
+    "pilot:p0:validate-result": "node scripts/p0x-pilot.mjs validate-result",
+    "pilot:p0:summarize": "node scripts/p0x-pilot.mjs summarize"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
