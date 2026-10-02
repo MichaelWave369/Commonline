@@ -801,3 +801,32 @@ See [GOVERNANCE_CLOSURE_P0V.md](GOVERNANCE_CLOSURE_P0V.md).
 ### P0-v boundary
 
 No real second-agent contact, federation, external model call, messaging, payment, deployment, or device-control path is added. P0-v proves the authority firewall before P1 introduces context-limited collaboration.
+
+
+## P0-w — pilot silent-worker boundary
+
+P0-w removes the final technical blocker to running the human-value experiment: the P0 silent worker can now produce task-specific artifacts without gaining broader room access or authority.
+
+Implemented:
+
+- explicit `mock` and `ollama-local` worker modes
+- deterministic mock remains the default for CI and ordinary development
+- loopback-only Ollama endpoint
+- redirects refused
+- explicit local model required
+- bounded provider timeout with fail-fast validation
+- only `WorkItem.prompt` is sent to the inference provider
+- no tools are supplied
+- no live audio, transcript, room history, resume delta, grants, or credentials are provider inputs
+- provider output must be strict JSON with one bounded title/body artifact
+- invalid provider output fails the work item rather than creating a proposal
+- provider profile appears on the server health surface
+- browser participants see worker mode, provider, model when present, tool status, and input scope
+- existing end-to-end acceptance proves the disclosure card in deterministic mode
+- no wire/storage migration; wire remains `p0-v.1`, storage remains `p0-q.1`
+
+See [PILOT_WORKER_P0W.md](PILOT_WORKER_P0W.md).
+
+### P0-w boundary
+
+P0-w does not claim that any model is useful enough for Commonline and does not complete the P0 pilot. It makes the Commonline condition capable of producing task-specific work under the existing authority boundaries so the registered human comparison can be run next.
