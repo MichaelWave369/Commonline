@@ -1,4 +1,4 @@
-export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-u.1" as const;
+export const COMMONLINE_WIRE_SCHEMA_VERSION = "p0-v.1" as const;
 export type CommonlineWireSchemaVersion = typeof COMMONLINE_WIRE_SCHEMA_VERSION;
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -65,6 +65,7 @@ export type Capability =
   | "RECEIVE_MEDIA"
   | "SPEAK"
   | "MANAGE_AGENT_VOICE"
+  | "DELEGATE_CONTEXT"
   | "EXECUTE_EXTERNAL_EFFECT";
 
 export interface GrantReceipt {
@@ -281,6 +282,21 @@ export interface RequestExternalEffectMessage {
   authorityGrantId: string;
   kind: ExternalEffectKind;
   target: "local-proof-sink";
+}
+
+export type ContextDelegationKind = "accepted-artifact-summary";
+
+export interface RequestContextDelegationMessage {
+  type: "request_context_delegation";
+  requestId: string;
+  roomId: string;
+  baseVersion: number;
+  delegationRequestId: string;
+  artifactId: string;
+  authorityGrantId: string;
+  kind: ContextDelegationKind;
+  target: "local-delegation-proof-sink";
+  purpose: "comparison-review";
 }
 
 export interface TransferAcceptAuthorityMessage {
@@ -775,6 +791,7 @@ export type ClientMessage =
   | SubmitWorkMessage
   | AcceptOutcomeMessage
   | RequestExternalEffectMessage
+  | RequestContextDelegationMessage
   | TransferAcceptAuthorityMessage
   | BootstrapAgentVoiceAuthorityMessage
   | GrantAgentVoiceMessage
@@ -1013,6 +1030,23 @@ export interface ExternalEffectStatusMessage {
   errorCode?: RejectionCode;
 }
 
+export type ContextDelegationState = "blocked" | "completed" | "failed";
+
+export interface ContextDelegationStatusMessage {
+  type: "context_delegation_status";
+  requestId: string;
+  roomId: string;
+  delegationRequestId: string;
+  artifactId: string;
+  kind: ContextDelegationKind;
+  target: "local-delegation-proof-sink";
+  purpose: "comparison-review";
+  state: ContextDelegationState;
+  authorityGrantId: string;
+  marker?: string;
+  errorCode?: RejectionCode;
+}
+
 export interface RtcSignalRelayMessage {
   type: "rtc_signal";
   requestId: string;
@@ -1121,6 +1155,7 @@ export type ServerMessage =
   | ExchangeResponseStatusMessage
   | AgentWorkStatusMessage
   | ExternalEffectStatusMessage
+  | ContextDelegationStatusMessage
   | RtcConfigMessage
   | RtcCallSessionMessage
   | RtcSignalRelayMessage
