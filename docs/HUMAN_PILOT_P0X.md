@@ -59,19 +59,15 @@ Before running pair 01, the operator must fill:
 4. any change to the registered retention/budget settings
 5. final pilot ID if the default is not used
 
-Then set:
+P0-y now adds one more launch requirement: the actual pilot machine must qualify the exact registered model against both frozen task briefs, capture the installed model digest, and finalize the launch registration from that receipt.
 
-```json
-"status": "launch-ready"
-```
+See [PILOT_LAUNCH_P0Y.md](PILOT_LAUNCH_P0Y.md).
 
-and run:
+Do not collect pilot evidence until the finalized registration passes:
 
 ```bash
-npm run pilot:p0:validate-registration -- path/to/registration.json --launch-ready
+npm run pilot:p0:validate-registration -- path/to/registration.launch.json --launch-ready
 ```
-
-Do not collect pilot evidence until this passes.
 
 ## Task comparability
 
