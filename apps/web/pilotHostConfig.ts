@@ -7,9 +7,14 @@ export interface PilotViteServerConfig {
   https?: ServerOptions;
 }
 
+type ReadBinaryFile = (path: string) => Buffer;
+
+const readBinaryFile: ReadBinaryFile = (path) =>
+  readFileSync(path);
+
 export function pilotViteServerConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-  readFile: typeof readFileSync = readFileSync
+  readFile: ReadBinaryFile = readBinaryFile
 ): PilotViteServerConfig {
   const lanHost =
     env.COMMONLINE_PILOT_LAN_HOST?.trim().toLowerCase() === "true";
