@@ -1168,3 +1168,5 @@ export type ServerMessage =
   | SfuConsumedMessage
   | SfuConsumerResumedMessage
   | IntentRejectedMessage;
+
+export * from "./agent-exchange";
